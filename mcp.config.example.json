@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "app-hook-studio": {
+      "command": "/Users/havoc/.nvm/versions/node/v24.20.0/bin/node",
+      "args": ["/Users/havoc/Documents/Projects/tools/macOS/app-hook-studio/dist/mcp.cjs"]
+    }
+  }
+}

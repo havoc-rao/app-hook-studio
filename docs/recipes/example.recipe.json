@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 2,
+  "id": "example-app",
+  "title": "Example App",
+  "appPath": "/Applications/Example.app",
+  "profile": {
+    "id": "example-app-1-0",
+    "appVersion": "1.0",
+    "assertions": [
+      {
+        "file": "Contents/Resources/app/package.json",
+        "pointer": "/version",
+        "equals": "1.0"
+      }
+    ],
+    "resource": {
+      "path": "Contents/Resources/app/main.js",
+      "sha256": "ad25cc50250295d09438b526b127ca3cb86d852cbe0d09a448c93b98abcfe9b9"
+    },
+    "mount": {
+      "driver": "dom-keyboard/v1",
+      "anchor": "/* app-hook-studio-mount */",
+      "placement": "before",
+      "rootSelector": "#chat"
+    }
+  },
+  "features": [
+    {
+      "id": "stop-chat",
+      "title": "停止聊天",
+      "description": "触发聊天区域中已分析的停止按钮",
+      "enabled": true,
+      "shortcut": "escape",
+      "trigger": "double-escape",
+      "withinMs": 500,
+      "action": "const button = root.querySelector('[data-action=\"stop\"]');\nif (button && !button.disabled) button.click();"
+    }
+  ],
+  "evidence": {
+    "sources": ["docs/recipes/example-main.js"],
+    "runtimeStatus": "not-tested",
+    "notes": "Synthetic documentation example. The example App and DOM selectors are not a real analysed application."
+  }
+}

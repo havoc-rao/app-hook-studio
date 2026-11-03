@@ -1,0 +1,131 @@
+{
+  "$schema": "../hook-recipe.schema.json",
+  "schemaVersion": 1,
+  "status": "design-example",
+  "id": "codebuddy-cn.chat",
+  "title": "CodeBuddy Chat Shortcuts",
+  "application": {
+    "id": "codebuddy-cn",
+    "bundleId": "com.tencent.codebuddycn",
+    "suggestedPath": "/Applications/CodeBuddy CN.app"
+  },
+  "bridge": {
+    "file": "codebuddy-chat.bridge.js",
+    "sha256": "fdc9d8090889809963d8aff44a8acb3181f8f688ef1daca1b38c51ea7544027f",
+    "export": "bind"
+  },
+  "profiles": [
+    {
+      "id": "codebuddy-cn-1.106.1-genie-3.10.0",
+      "versionAssertions": [
+        {
+          "file": "Contents/Resources/app/package.json",
+          "pointer": "/version",
+          "equals": "1.106.1"
+        },
+        {
+          "file": "Contents/Resources/app/extensions/genie/package.json",
+          "pointer": "/version",
+          "equals": "3.10.0"
+        }
+      ],
+      "resource": {
+        "path": "Contents/Resources/app/extensions/genie/out/webviews/main.942dbf9a.chunk.js",
+        "encoding": "utf-8",
+        "sha256": "ee829469ee2b4edd4c04f09f8b828840f196c82e22f5973d909ce6f29445c31f"
+      },
+      "mounts": [
+        {
+          "id": "chat-input",
+          "installer": "text-resource/v1",
+          "driver": "react-component/v1",
+          "placement": {
+            "kind": "before-exact-anchor",
+            "anchor": "const{setNavigationAllowed:Tn,navigateToInputContextLast:In}=",
+            "expectedMatches": 1,
+            "enclosingFunction": "ChatInput"
+          },
+          "bindings": {
+            "react": "m",
+            "inputRef": "Re",
+            "panelResolver": "Ae",
+            "streaming": "le",
+            "cancel": "Ce",
+            "appRequire": "r"
+          }
+        }
+      ],
+      "implementations": [
+        {
+          "action": "chat.stop",
+          "mount": "chat-input",
+          "invoke": {
+            "kind": "call-binding",
+            "binding": "cancel"
+          },
+          "guard": {
+            "binding": "streaming",
+            "equals": true
+          }
+        },
+        {
+          "action": "chat.new",
+          "mount": "chat-input",
+          "invoke": {
+            "kind": "bridge-method",
+            "method": "newChat"
+          }
+        }
+      ]
+    }
+  ],
+  "features": [
+    {
+      "id": "stop-chat",
+      "title": "Stop Chat",
+      "action": "chat.stop",
+      "defaultTrigger": {
+        "kind": "key-sequence",
+        "steps": [
+          {
+            "code": "Escape",
+            "modifiers": []
+          },
+          {
+            "code": "Escape",
+            "modifiers": []
+          }
+        ],
+        "withinMs": 500,
+        "scope": "panel",
+        "phase": "bubble",
+        "consume": "on-match",
+        "repeat": "ignore"
+      }
+    },
+    {
+      "id": "new-chat",
+      "title": "New Chat",
+      "action": "chat.new",
+      "defaultTrigger": {
+        "kind": "key-sequence",
+        "steps": [
+          {
+            "code": "KeyN",
+            "modifiers": ["ctrl", "meta"]
+          }
+        ],
+        "withinMs": 500,
+        "scope": "panel",
+        "phase": "bubble",
+        "consume": "on-match",
+        "repeat": "ignore"
+      }
+    }
+  ],
+  "verification": {
+    "basis": "static-analysis-and-user-feedback",
+    "runtimeStatus": "prototype-tested-recipe-not-tested",
+    "notes": "Original Esc/Esc prototype was user tested. This declarative recipe and generic compiler are design examples, not implemented runtime support."
+  }
+}

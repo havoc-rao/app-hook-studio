@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "appId": "codebuddy-cn",
+  "appPath": "/Applications/CodeBuddy CN.app",
+  "settings": {
+    "newChatEnabled": true,
+    "newChatShortcut": "ctrl+cmd+n",
+    "stopMode": "double-escape",
+    "stopShortcut": "cmd+alt+.",
+    "doubleEscapeMs": 500,
+    "scope": "panel"
+  }
+}
