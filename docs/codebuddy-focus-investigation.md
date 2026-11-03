@@ -38,7 +38,7 @@ App 整体计划现在校验并备份两份资源：原聊天 Webview，以及�
 
 原 v1 Webview renderer 保留在 `hook-v1.ts`，只用于精确识别已有安装并升级为带焦点接收器的 v2；不猜测接管未知字节。JSONC 所有权不变，显式允许从旧 `.focus` 命令迁移到 `runCommands` 包装命令；保留用户保存的快捷键、enabled 和其他规则。JSONC 的参数对象在安装器边界归一化，避免解析器的空原型对象与普通配置对象比较失真。
 
-聚焦命令桥接的备份位于应用数据目录 `focus-keybinding/bridge/backups/`。恢复整个资源补丁会恢复两份资源；用户规则和偏好保留，新的专用命令须重新整体安装才能使用。关闭某项只停用它的快捷键触发；App 中惯常按钮与其他功能不受影响。
+聚焦命令桥接的原文备份位于 App 内 `Contents/Resources/app-hook-studio-backups/codebuddy-cn-focus-host/<原始摘要>.original`。旧的应用数据目录 `focus-keybinding/bridge/backups/` 仍可读取并在下次安装时复制迁移，旧副本不删除。恢复整个资源补丁会恢复两份资源；用户规则和偏好保留，新的专用命令须重新整体安装才能使用。关闭某项只停用它的快捷键触发；App 中惯常按钮与其他功能不受影响。
 
 ## 证据与验证范围
 

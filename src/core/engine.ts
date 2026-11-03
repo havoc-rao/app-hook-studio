@@ -19,6 +19,8 @@ export type Inspection = {
   upgradeRequired: boolean;
   installedConfig?: AppConfig;
   backupPath: string;
+  backupDestinationPath: string;
+  backupLocation: "inside-app" | "legacy-external";
   backupState: "missing" | "valid" | "invalid";
 };
 
@@ -30,6 +32,7 @@ export type PreflightReport =
       inspection: Inspection;
       candidateSha256: string;
       willChange: boolean;
+      willWriteBackup: boolean;
     }
   | { compatible: false; checks: PreflightCheck[] };
 
@@ -57,6 +60,9 @@ export function expandAppPath(input: string): string {
   }
   return path.resolve(expanded);
 }
+
+export const appBackupRoot = (appPath: string): string =>
+  path.join(appPath, "Contents/Resources/app-hook-studio-backups");
 
 export class PatchEngine {
   readonly dataDirectory: string;
@@ -87,13 +93,21 @@ export class PatchEngine {
   }
 
   private async describe(current: CurrentArtifact): Promise<Inspection> {
-    const backupPath = this.backupPath(current.profile);
+    const backupDestinationPath = this.backupPath(current.appPath, current.profile);
+    const legacyPath = path.join(this.dataDirectory, "backups", `${current.profile.originalSha256}.original`);
+    let backupPath = backupDestinationPath;
+    let backupLocation: Inspection["backupLocation"] = "inside-app";
     let backupState: Inspection["backupState"] = "missing";
-    try {
-      backupState =
-        sha256(await fs.readFile(backupPath)) === current.profile.originalSha256 ? "valid" : "invalid";
-    } catch (error) {
-      if (!isMissing(error)) throw error;
+    for (const candidate of [backupDestinationPath, legacyPath]) {
+      try {
+        const bytes = await fs.readFile(candidate);
+        backupPath = candidate;
+        backupLocation = candidate === backupDestinationPath ? "inside-app" : "legacy-external";
+        backupState = sha256(bytes) === current.profile.originalSha256 ? "valid" : "invalid";
+        break; // A corrupt primary backup is never hidden by a valid legacy copy.
+      } catch (error) {
+        if (!isMissing(error)) throw error;
+      }
     }
     return {
       appId: this.adapter.id,
@@ -112,16 +126,23 @@ export class PatchEngine {
           }
         : undefined,
       backupPath,
+      backupDestinationPath,
+      backupLocation,
       backupState,
     };
   }
 
-  private backupPath(profile: ArtifactProfile): string {
-    return path.join(this.dataDirectory, "backups", `${profile.originalSha256}.original`);
+  private backupPath(appPath: string, profile: ArtifactProfile): string {
+    return path.join(appBackupRoot(appPath), this.adapter.id, `${profile.originalSha256}.original`);
   }
 
-  private async preserveOriginal(original: string, profile: ArtifactProfile): Promise<void> {
-    const backup = this.backupPath(profile);
+  private async preserveOriginal(current: CurrentArtifact): Promise<void> {
+    const { original, profile } = current;
+    const status = await this.describe(current);
+    if (status.backupState === "invalid")
+      throw new Error("已有备份摘要不匹配；保留现场，拒绝覆盖备份或修改应用。");
+    if (status.backupState === "valid" && status.backupLocation === "inside-app") return;
+    const backup = this.backupPath(current.appPath, profile);
     await fs.mkdir(path.dirname(backup), { recursive: true, mode: 0o700 });
     try {
       if (sha256(await fs.readFile(backup)) !== profile.originalSha256) {
@@ -226,7 +247,11 @@ export class PatchEngine {
         return result;
       },
       (result) =>
-        result.backupState === "valid" ? "原始备份摘要有效。" : "尚无备份；应用时先创建原始备份。",
+        result.backupState === "valid"
+          ? result.backupLocation === "inside-app"
+            ? `包内原始备份有效：${result.backupPath}`
+            : `旧备份有效：${result.backupPath}；安装时复制到 ${result.backupDestinationPath}，保留旧副本。`
+          : `尚无备份；写入前先保存到 ${result.backupDestinationPath}。`,
     );
     return { config, current, patched, inspection, checks };
   }
@@ -243,6 +268,9 @@ export class PatchEngine {
         inspection: prepared.inspection,
         candidateSha256: sha256(prepared.patched),
         willChange: prepared.current.source !== prepared.patched,
+        willWriteBackup:
+          prepared.inspection.backupState === "missing" ||
+          prepared.inspection.backupLocation === "legacy-external",
       };
     } catch (error) {
       if (error instanceof PreflightError) return { compatible: false, checks: error.checks };
@@ -254,10 +282,11 @@ export class PatchEngine {
     if (this.adapter.resourceProcessing === "node-process" && !this.options.inline)
       return resourceOperation(this.adapter.id, "apply", this.dataDirectory, value);
     // Always prepare fresh; a previously displayed preflight report is never write authority.
-    const { config, current, patched } = await this.prepare(value);
+    const { config, current, patched, inspection } = await this.prepare(value);
     const changed = current.source !== patched;
-    if (changed) await requireAppClosed(current.appPath, this.adapter.title);
-    await this.preserveOriginal(current.original, current.profile);
+    if (changed || inspection.backupState === "missing" || inspection.backupLocation === "legacy-external")
+      await requireAppClosed(current.appPath, this.adapter.title);
+    await this.preserveOriginal(current);
     if (changed) await this.replace(current.artifactPath, current.source, patched);
     return { changed, inspection: await this.inspect(config.appPath) };
   }
@@ -266,10 +295,10 @@ export class PatchEngine {
     if (this.adapter.resourceProcessing === "node-process" && !this.options.inline)
       return resourceOperation(this.adapter.id, "restore", this.dataDirectory, appPath);
     const current = await this.read(appPath);
-    await this.preserveOriginal(current.original, current.profile);
     if (current.kind !== "original") {
       await requireAppClosed(current.appPath, this.adapter.title);
-      const backup = await fs.readFile(this.backupPath(current.profile), "utf8");
+      await this.preserveOriginal(current);
+      const backup = await fs.readFile(this.backupPath(current.appPath, current.profile), "utf8");
       await this.replace(current.artifactPath, current.source, backup);
     }
     return { changed: current.kind !== "original", inspection: await this.inspect(appPath) };
@@ -279,7 +308,11 @@ export class PatchEngine {
     if (this.adapter.resourceProcessing === "node-process" && !this.options.inline)
       return resourceOperation(this.adapter.id, "adopt", this.dataDirectory, appPath);
     const current = await this.read(appPath);
-    await this.preserveOriginal(current.original, current.profile);
+    const status = await this.describe(current);
+    if (status.backupState === "invalid") throw new Error("已有备份摘要不匹配；拒绝覆盖。");
+    if (status.backupState === "missing" || status.backupLocation === "legacy-external")
+      await requireAppClosed(current.appPath, this.adapter.title);
+    await this.preserveOriginal(current);
     return this.inspect(appPath);
   }
 }

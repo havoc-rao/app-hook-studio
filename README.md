@@ -95,7 +95,7 @@ UI 根据 adapter 的 feature 描述分组，仅显示所选功能的字段。�
 - **仅保存配置**：保留表单草稿，不修改目标应用。
 - **Install / 安装 App**：统一预检查并显示所有已保存功能的安装计划，执行后按步骤报告结果与重启要求。
 - **读取已安装配置**：从资源中的补丁元数据填入表单。
-- **备份并接管现有补丁**：长期保存原始资源，不改变正在使用的补丁。
+- **备份并接管现有补丁**：把所有资源原文保存到 App 内，不改变补丁代码；创建或迁移备份前须退出 App。
 - **恢复原始文件**：恢复当前受支持构建的完整原始资源，保留配置和备份。
 
 示例见 [settings.example.json](settings.example.json)。配置有 `appId`，不能把一个应用的配置用于另一个应用。
@@ -192,16 +192,24 @@ Contents/Resources/app/extensions/genie/out/webviews/main.942dbf9a.chunk.js
 
 ## 数据、迁移和恢复
 
-新项目的数据按应用隔离：
+原文件备份与用户配置分别保存：
 
 ```text
+<所选 App>.app/Contents/Resources/app-hook-studio-backups/
+  <resource-adapter-id>/<原始 SHA-256>.original
+
 ~/Library/Application Support/App Hook Studio/
-  apps/<app-id>/
-    settings.json
-    backups/<原始 SHA-256>.original
+  apps/<app-id>/settings.json
+  apps/<app-id>/focus-keybinding/   # 用户快捷键的规则记录、偏好与备份
 ```
 
-CodeBuddy adapter 能识别先前已实测的 Esc/Esc 临时补丁，重建并核对原始字节后保存到新目录。运行时不依赖 `/private/tmp/codebuddy-hotkeys`。旧项目的设置如存在会作为只读迁移来源；首次在新项目保存时写入新位置，旧配置和备份不删除。
+CodeBuddy 的 Webview 原文存放在 `codebuddy-cn/`，扩展命令桥接原文存放在 `codebuddy-cn-focus-host/`。首次修改前先保存原文，重复安装、修改快捷键不会覆盖最初的原文备份。安装确认页显示每份备份的目标路径；应用设置还提供「打开 App 内原文件备份」。
+
+恢复会先检查当前资源身份及备份 SHA-256，再从 `.original` 覆盖回原路径并校验。备份目录保留，所以保证的是目标资源的原文字节，不承诺整个 App 目录完全无痕。**官方更新可能清除包内备份，更新前请先恢复或另存备份。** 用户快捷键在包外，继续按显式 JSONC 所有权更新/移除规则，保留其他用户修改。
+
+兼容旧版用户数据目录中的 `backups/`（聚焦桥接旧目录为 `focus-keybinding/bridge/backups/`）：新包内备份缺失时可识别有效旧备份；下一次 Install / 备份操作复制到 App 内，旧副本保留。包内备份损坏时不会用旧副本掩盖错误，也不会覆盖损坏文件。只迁移备份而不改 JS 时同样需要退出 App。
+
+CodeBuddy adapter 能识别先前已实测的 Esc/Esc 临时补丁，重建并核对原始字节后保存到所选 App 内。运行时不依赖 `/private/tmp/codebuddy-hotkeys`。旧项目的设置如存在会作为只读迁移来源；首次在新项目保存时写入新位置，旧配置和备份不删除。
 
 补丁包含设置元数据。检查时重新生成补丁比对，再核对剥离补丁后的原始摘要。相同设置重复应用不叠加代码；更改设置替换原补丁。遇到未知文件修改、版本变化或损坏备份则拒绝覆盖。
 

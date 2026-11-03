@@ -115,6 +115,17 @@ export function InstallApp({ adapter, onChanged = () => {} }: { adapter: AppAdap
       {plan?.items.map((item) => (
         <Form.Description key={item.id} title={item.title} text={`${item.settings}\n${item.target}`} />
       ))}
+      {plan?.backups.map((backup) => (
+        <Form.Description
+          key={backup.title}
+          title={`原文件备份 · ${backup.title}`}
+          text={`${backup.destination}${backup.migrationRequired ? `\n旧备份将复制迁移并保留：${backup.current}` : ""}`}
+        />
+      ))}
+      <Form.Description
+        title="恢复方式"
+        text="从包内原文备份校验后覆盖回资源文件。备份目录保留；官方更新前先恢复或另存备份。用户快捷键记录仍在用户数据目录。"
+      />
       <Form.Separator />
       <Form.Description title="所需权限" text={requirements.permission} />
       <Form.Description title="安装前" text={requirements.before} />
@@ -125,7 +136,9 @@ export function InstallApp({ adapter, onChanged = () => {} }: { adapter: AppAdap
           text={
             plan.restartRequired
               ? "应用资源将更新：安装前退出，完成后重新打开 App。"
-              : "应用资源无需重写；仅配置更新通常即时生效。如先前安装后未重新打开，仍应重新打开。"
+              : plan.requiresAppExit
+                ? "资源代码相同，但需创建/迁移包内备份；请先退出，完成后重新打开。"
+                : "应用资源和包内备份均无需写入；仅配置更新通常即时生效。如先前安装后未重新打开，仍应重新打开。"
           }
         />
       )}

@@ -151,3 +151,61 @@ test("a different app version is rejected by read-only preflight", async (t) => 
   assert.equal(await fs.readFile(f.bundle, "utf8"), "unsupported source");
   await assert.rejects(fs.stat(f.data), { code: "ENOENT" });
 });
+
+test(
+  "legacy external backups migrate inside the App even when resource bytes do not change",
+  localOnly,
+  async (t) => {
+    const original = await fs.readFile(originalPath!, "utf8"),
+      f = await fixture(original);
+    t.after(() => fs.rm(f.root, { recursive: true, force: true }));
+    const config = { ...DEFAULT_CONFIG, appPath: f.appPath };
+    await fs.writeFile(f.bundle, patchBundle(original, validateSettings(config.settings)));
+    const legacy = path.join(f.data, "backups", `${PROFILE.originalSha256}.original`);
+    await fs.mkdir(path.dirname(legacy), { recursive: true });
+    await fs.writeFile(legacy, original);
+    const report = await f.engine.preflight(config);
+    assert.equal(report.compatible, true);
+    if (!report.compatible) throw new Error("fixture preflight failed");
+    assert.equal(report.willChange, false);
+    assert.equal(report.willWriteBackup, true);
+    assert.equal(report.inspection.backupLocation, "legacy-external");
+    assert.equal(report.inspection.backupPath, legacy);
+    await assert.rejects(fs.stat(report.inspection.backupDestinationPath), { code: "ENOENT" });
+    const installed = await f.engine.apply(config);
+    assert.equal(installed.changed, false);
+    assert.equal(installed.inspection.backupLocation, "inside-app");
+    assert.ok(
+      installed.inspection.backupPath.startsWith(
+        path.join(installed.inspection.appPath, "Contents/Resources/app-hook-studio-backups"),
+      ),
+    );
+    assert.equal(await fs.readFile(legacy, "utf8"), original);
+    const before = await fs.stat(installed.inspection.backupPath);
+    await f.engine.apply({ ...config, settings: { ...config.settings, doubleEscapeMs: 650 } });
+    assert.equal((await fs.stat(installed.inspection.backupPath)).mtimeMs, before.mtimeMs);
+    await f.engine.restore(f.appPath);
+    assert.equal(await fs.readFile(f.bundle, "utf8"), original);
+    assert.equal(await fs.readFile(installed.inspection.backupPath, "utf8"), original);
+  },
+);
+
+test("a corrupt in-App backup never falls back to a valid legacy backup", localOnly, async (t) => {
+  const original = await fs.readFile(originalPath!, "utf8"),
+    f = await fixture(original);
+  t.after(() => fs.rm(f.root, { recursive: true, force: true }));
+  const config = { ...DEFAULT_CONFIG, appPath: f.appPath };
+  const installed = await f.engine.apply(config),
+    source = await fs.readFile(f.bundle, "utf8");
+  const legacy = path.join(f.data, "backups", `${PROFILE.originalSha256}.original`);
+  await fs.mkdir(path.dirname(legacy), { recursive: true });
+  await fs.writeFile(legacy, original);
+  await fs.writeFile(installed.inspection.backupPath, "damaged primary");
+  const status = await f.engine.inspect(f.appPath);
+  assert.equal(status.backupLocation, "inside-app");
+  assert.equal(status.backupState, "invalid");
+  assert.equal((await f.engine.preflight(config)).compatible, false);
+  await assert.rejects(f.engine.restore(f.appPath), /备份摘要不匹配/);
+  assert.equal(await fs.readFile(f.bundle, "utf8"), source);
+  assert.equal(await fs.readFile(installed.inspection.backupPath, "utf8"), "damaged primary");
+});

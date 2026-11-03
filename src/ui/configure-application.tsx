@@ -2,12 +2,12 @@ import { Action, ActionPanel, Form, Icon, Toast, open, showToast } from "@raycas
 import { useEffect, useMemo, useState } from "react";
 import { promises as fs } from "node:fs";
 import { AppAdapter } from "../core/contracts";
-import { PatchEngine, PreflightReport, expandAppPath } from "../core/engine";
+import { PatchEngine, PreflightReport, expandAppPath, appBackupRoot } from "../core/engine";
 import { SaveAndInstallAppAction } from "./install-action";
 import { ENTER_SHORTCUT } from "./shortcuts";
 import { loadConfig, saveConfig } from "../core/storage";
 
-import { restoreAppResources } from "../application/app-install";
+import { restoreAppResources, adoptAppResources } from "../application/app-install";
 import { AppVersionFields } from "./app-version";
 
 export function ConfigureApplication({ adapter, onChanged }: { adapter: AppAdapter; onChanged(): void }) {
@@ -84,8 +84,8 @@ export function ConfigureApplication({ adapter, onChanged }: { adapter: AppAdapt
             icon={Icon.HardDrive}
             onAction={() =>
               task("备份", async () => {
-                await engine.adopt(appPath);
-                return "已保存原始备份。";
+                await adoptAppResources(adapter, appPath);
+                return "已在 App 内保存所有资源原文备份，旧备份保留。";
               })
             }
           />
@@ -96,6 +96,22 @@ export function ConfigureApplication({ adapter, onChanged }: { adapter: AppAdapt
               task("恢复", async () => {
                 await restoreAppResources(adapter, appPath);
                 return "原始资源已恢复；重新打开应用生效。";
+              })
+            }
+          />
+          <Action
+            title="打开 App 内原文件备份"
+            icon={Icon.Folder}
+            onAction={() =>
+              task("打开备份", async () => {
+                const root = appBackupRoot(expandAppPath(appPath));
+                try {
+                  await fs.access(root);
+                } catch {
+                  throw new Error("尚无包内备份；请先整体安装，旧版外部备份仍可用于恢复。");
+                }
+                await open(root);
+                return "已打开包内原文备份。";
               })
             }
           />

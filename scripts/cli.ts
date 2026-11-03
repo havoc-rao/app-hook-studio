@@ -5,7 +5,7 @@ import { parseArgs } from "node:util";
 import { DEFAULT_APP_ID, APP_ADAPTERS, getAdapter } from "../src/apps/registry";
 import { validateAppConfig } from "../src/core/contracts";
 import { PatchEngine } from "../src/core/engine";
-import { prepareAppInstall, restoreAppResources } from "../src/application/app-install";
+import { prepareAppInstall, restoreAppResources, adoptAppResources } from "../src/application/app-install";
 import { getRecipe, registeredRecipes } from "../src/recipes/store";
 import { recipeAdapter } from "../src/recipes/adapter";
 import { loadConfig } from "../src/core/storage";
@@ -31,7 +31,7 @@ async function main() {
     positionals.length > 1
   ) {
     console.log(
-      "App Hook Studio\n\n用法：npm run cli -- <list|status|preflight|apply|restore|adopt|action> [--target codebuddy-cn] [--action <id>] [--app /path/to/App.app] [--config /path/to/settings.json] [--data-dir /path/to/app-data]\n\nstatus：只读检测；preflight：只读生成和验证补丁；adopt：长期备份，不改变应用；apply/restore：需先退出目标应用。",
+      "App Hook Studio\n\n用法：npm run cli -- <list|status|preflight|apply|restore|adopt|action> [--target codebuddy-cn] [--action <id>] [--app /path/to/App.app] [--config /path/to/settings.json] [--data-dir /path/to/app-data]\n\nstatus：只读检测；preflight：只读生成和验证补丁；adopt：在 App 内备份原文，不改资源代码，需先退出 App；apply/restore：需先退出目标应用。",
     );
     if (!values.help) process.exitCode = 1;
     return;
@@ -76,7 +76,7 @@ async function main() {
       command === "status"
         ? await engine.inspect(app)
         : command === "adopt"
-          ? await engine.adopt(app)
+          ? await adoptAppResources(adapter, app, engine.dataDirectory).then(() => engine.inspect(app))
           : await restoreAppResources(adapter, app, engine.dataDirectory).then(() => engine.inspect(app));
     console.log(JSON.stringify(result, null, 2));
     return;

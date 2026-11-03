@@ -28,7 +28,7 @@
 3. 在本地生成 Recipe JSON。`validate_recipe {"recipePath":"/absolute/path/recipe.json"}` 只读检查 schema、版本断言、原文 SHA-256、唯一锚点、完整候选脚本语法和备份状态。返回检查项，不回传完整目标资源。
 4. `register_app {"recipePath":"/absolute/path/recipe.json"}` 注册新 App。更新已有 ID 必须传入从 `get_app` 取得的 `expectedRevision`；没有隐式覆盖。
 5. 向已注册的 App 追加功能时，用 `register_items {"appId":"example-app","itemsPath":"/absolute/path/items.json","expectedRevision":"<current revision>"}`。文件是 feature 对象数组，不会覆盖已有 feature。重复 ID 和快捷键碰撞会拒绝。
-6. `preflight_app {"appId":"example-app"}` 按**全部已保存配置**生成整体安装计划。它不会检查退出状态或声称已取得写权限；这两项在用户执行 Install 时检查。
+6. `preflight_app {"appId":"example-app"}` 按**全部已保存配置**生成整体安装计划。计划包含每份包内原文备份路径以及是否需要退出 App；它不会实际检查运行状态或声称已取得写权限，这两项在执行 Install 时检查。
 7. Raycast → Manage App Hooks → ⌘K → **刷新注册应用**（或重新打开入口），在“MCP 注册应用”中配置各项 enabled/快捷键，再 **⌘Enter** 整体安装。安装前退出目标 App，安装后重新打开并验收。
 
 返回 `runtimeStatus` 是 Recipe 作者提供的声明，不是 MCP 独立验证的结果。任何静态检查通过都不等于已经真实运行成功。`get_app` 包含动作源代码，查询前应考虑所需上下文；日常发现使用更小的 `list_apps`。

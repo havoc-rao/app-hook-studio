@@ -56,6 +56,8 @@ export type AppInstallResult = {
 };
 export type AppInstallPlan = {
   appPath: string;
+  requiresAppExit: boolean;
+  backups: { title: string; destination: string; current: string; migrationRequired: boolean }[];
   items: { id: string; title: string; settings: string; target: string }[];
   checks: PreflightCheck[];
   permission: string;
@@ -73,7 +75,7 @@ export function appInstallRequirements(adapter: AppAdapter) {
       ? "修改应用包时，Raycast 需具备“App 管理”授权和资源写权限：系统设置 → 隐私与安全性 → App 管理 → Raycast。终端授权不能代替 Raycast。聚焦快捷键另外需要用户配置文件写权限。实际写权限在安装时判断。"
       : "需要当前用户配置文件的写权限，本次不修改 .app 包，不要求“App 管理”授权或管理员提权。",
     before: resources
-      ? `如需更新应用资源，请先保存工作并用 ⌘Q 完全退出 ${adapter.title}。安装会检查运行状态，不会自动强退。`
+      ? `更新应用资源或创建/迁移包内备份时，请先保存工作并用 ⌘Q 完全退出 ${adapter.title}。安装会检查运行状态，不会自动强退。`
       : "本次仅更新用户配置，无需退出 App。",
     after: resources
       ? `应用资源有变化时，安装后重新打开 ${adapter.title} 并验证快捷键。若先前安装后一直没有重新打开，也应重新打开；仅更新聚焦配置通常即时生效。`
@@ -131,10 +133,18 @@ export async function prepareAppInstall(
     reports.find(({ task }) => task.id === "chat-resource")?.report.inspection.artifactPath ?? "";
   const requirements = appInstallRequirements(adapter);
   const restartRequired = reports.some(({ report }) => report.willChange);
+  const requiresAppExit = reports.some(({ report }) => report.willChange || report.willWriteBackup);
   return {
     appPath: config.appPath,
     ...requirements,
     restartRequired,
+    requiresAppExit,
+    backups: reports.map(({ task, report }) => ({
+      title: task.title,
+      destination: report.inspection.backupDestinationPath,
+      current: report.inspection.backupPath,
+      migrationRequired: report.inspection.backupLocation === "legacy-external",
+    })),
     items: adapter.features.map((feature) => {
       if (feature.kind === "resource")
         return {
@@ -188,7 +198,7 @@ export async function prepareAppInstall(
             throw new Error(
               `${task.title}：${fresh.checks.find((check) => check.status === "fail")?.detail ?? "预检查失败"}`,
             );
-          willChange ||= fresh.willChange;
+          willChange ||= fresh.willChange || fresh.willWriteBackup;
         }
         if (willChange) await requireAppClosed(config.appPath, adapter.title);
         if (!tasks.length && native.some((item) => item.preferences.enabled))
@@ -230,7 +240,9 @@ export async function prepareAppInstall(
         await run(task.id, task.title, async () => {
           const installed = await task.engine.apply(task.config);
           needsRestart ||= installed.changed;
-          return installed.changed ? "已写入并验证资源，原始文件已备份。" : "资源相同，未重复写入。";
+          return installed.changed
+            ? "已写入并验证资源，原始文件已备份。"
+            : "资源代码相同，包内原文备份已就绪。";
         });
       for (const item of native)
         await run(`native:${item.feature.id}`, item.feature.title, async () => {
@@ -261,7 +273,9 @@ export async function prepareAppInstall(
         nextStep: complete
           ? needsRestart
             ? `整个 App 安装完成。请重新打开 ${adapter.title} 后验证三个功能。`
-            : "整个 App 配置已就绪；若先前安装后未重新打开，请重新打开。否则仅快捷键配置通常即时生效。"
+            : requiresAppExit
+              ? "App 配置与包内备份已就绪，请重新打开应用。"
+              : "整个 App 配置已就绪；若先前安装后未重新打开，请重新打开。否则仅快捷键配置通常即时生效。"
           : "整个 App 安装未完成。已完成的步骤保留，备份也保留；处理失败原因后重新 Install，可在应用管理中恢复应用资源。",
       };
     },
@@ -274,7 +288,16 @@ export async function restoreAppResources(
   appPath: string,
   directory = appDataDirectory(adapter.id),
 ) {
-  const engines = [
+  const engines = resourceEngines(adapter, directory);
+  const inspections = await Promise.all(engines.map((item) => item.inspect(appPath)));
+  if (inspections.some((item) => item.backupState === "invalid"))
+    throw new Error("恢复所需备份校验失败，未修改 App。请保留文件并检查。 ");
+  if (inspections.some((item) => item.kind !== "original")) await requireAppClosed(appPath, adapter.title);
+  for (const item of engines) await item.restore(appPath);
+}
+
+function resourceEngines(adapter: AppAdapter, directory: string): PatchEngine[] {
+  return [
     ...(adapter.features.some((f) => f.kind === "resource") ? [new PatchEngine(adapter, directory)] : []),
     ...adapter.features.flatMap((f) =>
       f.kind === "ide-keybinding" && f.resourceBridge
@@ -282,9 +305,18 @@ export async function restoreAppResources(
         : [],
     ),
   ];
-  const inspections = await Promise.all(engines.map((item) => item.inspect(appPath)));
+}
+
+export async function adoptAppResources(
+  adapter: AppAdapter,
+  appPath: string,
+  directory = appDataDirectory(adapter.id),
+) {
+  const engines = resourceEngines(adapter, directory);
+  const inspections = await Promise.all(engines.map((engine) => engine.inspect(appPath)));
   if (inspections.some((item) => item.backupState === "invalid"))
-    throw new Error("恢复所需备份校验失败，未修改 App。请保留文件并检查。 ");
-  if (inspections.some((item) => item.kind !== "original")) await requireAppClosed(appPath, adapter.title);
-  for (const item of engines) await item.restore(appPath);
+    throw new Error("已有备份校验失败，未创建或覆盖备份。");
+  if (inspections.some((item) => item.backupState === "missing" || item.backupLocation === "legacy-external"))
+    await requireAppClosed(appPath, adapter.title);
+  for (const engine of engines) await engine.adopt(appPath);
 }

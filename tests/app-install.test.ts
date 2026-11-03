@@ -14,6 +14,7 @@ import { defaultConfig } from "../src/core/contracts";
 import {
   appInstallRequirements,
   restoreAppResources,
+  adoptAppResources,
   prepareAppInstall,
   saveNativePreferences,
   loadNativePreferences,
@@ -232,5 +233,63 @@ test(
     await restoreAppResources(f.adapter, f.adapter.defaultAppPath, f.data);
     assert.equal(await fs.readFile(f.artifact, "utf8"), f.source);
     assert.equal(await fs.readFile(f.bridgePath, "utf8"), f.bridgeSource);
+  },
+);
+
+test(
+  "whole-App backup action stores both resource originals inside the App without changing code or user rules",
+  localOnly,
+  async (t) => {
+    const f = await fixture();
+    t.after(() => fs.rm(f.root, { recursive: true, force: true }));
+    await adoptAppResources(f.adapter, f.adapter.defaultAppPath, f.data);
+    const main = await new PatchEngine(f.adapter, f.data).inspect(f.adapter.defaultAppPath);
+    const feature = f.adapter.features.find((item) => item.kind === "ide-keybinding")!;
+    if (feature.kind !== "ide-keybinding") throw new Error("missing native feature");
+    const bridge = await new PatchEngine(
+      feature.resourceBridge!,
+      path.join(f.data, feature.dataSubdirectory, "bridge"),
+    ).inspect(f.adapter.defaultAppPath);
+    assert.equal(main.backupLocation, "inside-app");
+    assert.equal(bridge.backupLocation, "inside-app");
+    assert.equal(main.backupState, "valid");
+    assert.equal(bridge.backupState, "valid");
+    assert.equal(await fs.readFile(f.artifact, "utf8"), f.source);
+    assert.equal(await fs.readFile(f.bridgePath, "utf8"), f.bridgeSource);
+    assert.equal(parse(await fs.readFile(f.target, "utf8")).length, 0);
+  },
+);
+
+test(
+  "backup-only migration requires App exit while preserving runtime restart semantics",
+  localOnly,
+  async (t) => {
+    const f = await fixture();
+    t.after(() => fs.rm(f.root, { recursive: true, force: true }));
+    await (await prepareAppInstall(f.adapter, f.data, defaultConfig(f.adapter))).execute();
+    const mainEngine = new PatchEngine(f.adapter, f.data);
+    const feature = f.adapter.features.find((item) => item.kind === "ide-keybinding")!;
+    if (feature.kind !== "ide-keybinding") throw new Error("missing native feature");
+    const bridgeData = path.join(f.data, feature.dataSubdirectory, "bridge");
+    const bridgeEngine = new PatchEngine(feature.resourceBridge!, bridgeData);
+    for (const [engine, data] of [
+      [mainEngine, f.data],
+      [bridgeEngine, bridgeData],
+    ] as const) {
+      const inspection = await engine.inspect(f.adapter.defaultAppPath);
+      const legacy = path.join(data, "backups", `${inspection.profile.originalSha256}.original`);
+      await fs.mkdir(path.dirname(legacy), { recursive: true });
+      await fs.rename(inspection.backupPath, legacy);
+    }
+    const plan = await prepareAppInstall(f.adapter, f.data);
+    assert.equal(plan.restartRequired, false);
+    assert.equal(plan.requiresAppExit, true);
+    assert.equal(
+      plan.backups.every((backup) => backup.migrationRequired),
+      true,
+    );
+    assert.equal((await plan.execute()).complete, true);
+    assert.equal((await mainEngine.inspect(f.adapter.defaultAppPath)).backupLocation, "inside-app");
+    assert.equal((await bridgeEngine.inspect(f.adapter.defaultAppPath)).backupLocation, "inside-app");
   },
 );
