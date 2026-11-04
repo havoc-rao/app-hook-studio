@@ -69,7 +69,7 @@ hookManager.executeHooks("Notification", {
 });
 ```
 
-以上字段来自包内真实实现；`tool_name`、`tool_input`、`tool_call_id` 不在该通知实现的标准 payload 中。如果增加，应明确作为扩展字段。
+以上字段来自包内真实实现；`tool_name`、`tool_input`、`tool_call_id` 不在该通知实现的标准 payload 中。v4 hack 为外部批准增加 `request_id`、`tool_call_id`、`tool_name` 和 `approval_channel` 扩展字段，见[外部批准协议](codebuddy-approval-control.md)。
 
 模块 `73280` 中 `sn` 是 `tn(932708)`，提供 `ContainerUtil`；hook token 来自 `tn(946785).HookManager`。可以沿现有 IoC 获取执行器：
 
@@ -94,9 +94,9 @@ const manager = sn.ContainerUtil.get(tn(946785).HookManager);
 
 ## 验证与落地范围
 
-现已实现于 `src/apps/codebuddy-cn/approval-runtime.ts`，由 `focus-host.ts` 的 v3 共享补丁在扩展激活时安装 listener 包装器；保留原方法返回值与 Promise，不等待通知完成。主会话与子任务使用各自 ToolManager 的 session、transcript、generation、model 和工作目录；没有工作目录时记录错误并跳过，避免使用扩展宿主目录。转发的父 Task 确认由子任务点位负责，避免重复。弱引用记录待确认实例，确认时间变化或开始/完成执行时允许下一轮，扩展卸载恢复原方法。
+现已实现于 `src/apps/codebuddy-cn/approval-runtime.ts`，由 `focus-host.ts` 的 v4 共享补丁在扩展激活时安装 listener 包装器；保留原方法返回值与 Promise，不等待通知完成。主会话与子任务使用各自 ToolManager 的 session、transcript、generation、model 和工作目录；没有工作目录时记录错误并跳过，避免使用扩展宿主目录。转发的父 Task 确认由子任务点位负责，避免重复。弱引用记录待确认实例，确认时间变化或开始/完成执行时允许下一轮，扩展卸载恢复原方法。
 
-Raycast 内置功能 `approval-notification` 随整个 App 安装，无独立快捷键设置。动作通过 CodeBuddy 自身 hooks 配置控制。与聚焦功能共享同一个 host adapter、备份目录和单次写入；支持识别并升级旧 v1/v2 桥。安装器在写入前验证资源摘要、唯一锚点和完整 JS 语法，恢复时精确还原两份资源。MCP `list_apps` / `get_app` 自动发现内置功能，`preflight_app` 返回对应目标和共享安装计划。
+Raycast 内置功能 `approval-notification` 随整个 App 安装，无独立快捷键设置。动作通过 CodeBuddy 自身 hooks 配置控制。与聚焦功能共享同一个 host adapter、备份目录和单次写入；支持识别并升级旧 v1/v2/v3 桥。安装器在写入前验证资源摘要、唯一锚点和完整 JS 语法，恢复时精确还原两份资源。MCP `list_apps` / `get_app` 自动发现内置功能，`preflight_app` 返回对应目标和共享安装计划。
 
 在 CodeBuddy 已使用的 hooks 配置中合并如下结构，替换命令为自己的通知程序（通过标准输入读取 JSON）：
 
@@ -115,6 +115,6 @@ Raycast 内置功能 `approval-notification` 随整个 App 安装，无独立快
 
 不配置匹配 hook 时不会执行通知命令；该通知不读取返回值来决定批准或拒绝。
 
-VM 和临时 `.app` 测试覆盖通知错误隔离、重复确认、多轮确认、并发会话、子任务、卸载、原返回值、旧桥升级、共享资源只安装一次及字节恢复。真实模型会话尚未验收。
+VM 和临时 `.app` 测试覆盖通知错误隔离、重复确认、多轮确认、并发会话、子任务、卸载、原返回值、旧桥升级、共享资源只安装一次及字节恢复。批准通知点位已由用户实测确认有效；新增外部批准动作尚待真实模型会话验收。
 
 运行验收至少覆盖：普通工具确认、安全规则确认、自动允许不发通知、拒绝直接终止不发等待通知、ACP 重试不重复、子任务多轮确认、通知失败仍能正常批准和取消会话。静态搜索无法证明这些路径在真实模型会话里的表现。

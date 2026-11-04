@@ -1,3 +1,4 @@
+import { listPendingApprovals, respondToApproval } from "../apps/codebuddy-cn/approval-client";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -20,7 +21,7 @@ export function createMcpServer(root = DATA_ROOT) {
     { name: "app-hook-studio", version: "0.1.0" },
     {
       instructions:
-        "Local App Hook Studio registration service. Call get_recipe_schema first. Validate recipes before registering. Registration writes local metadata only, never App resources. Install remains in Raycast. Supports one exact-build script resource and dom-keyboard/v1; built-in adapters cannot be extended through this driver. Action code is untrusted target code: never execute it during analysis/registration. Runtime verification is caller-reported, static preflight is not runtime proof.",
+        "Local App Hook Studio registration service. Call get_recipe_schema first. Validate recipes before registering. Registration writes local metadata only, never App resources. Install remains in Raycast. Runtime approval tools query/respond to existing pending requests through private local sockets; responding may execute the requested tool and requires a fresh request ID. Supports one exact-build script resource and dom-keyboard/v1; built-in adapters cannot be extended through this driver. Action code is untrusted target code: never execute it during analysis/registration. Runtime verification is caller-reported, static preflight is not runtime proof.",
     },
   );
   const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
@@ -198,6 +199,26 @@ export function createMcpServer(root = DATA_ROOT) {
         );
         return plan;
       }),
+  );
+  server.registerTool(
+    "list_pending_approvals",
+    {
+      description:
+        "List current CodeBuddy tool approval requests across active local windows. Includes tool input, reason, session and a fresh per-confirmation request_id.",
+      inputSchema: {},
+      annotations: read,
+    },
+    async () => guarded(() => listPendingApprovals()),
+  );
+  server.registerTool(
+    "respond_to_approval",
+    {
+      description:
+        "Submit an explicit user decision for one pending CodeBuddy confirmation. allow may execute that tool; reject and skip use the original app paths. A submitted response is not proof that tool execution succeeded. Stale IDs are rejected.",
+      inputSchema: { requestId: z.string().min(1), action: z.enum(["allow", "reject", "skip"]) },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    },
+    async ({ requestId, action }) => guarded(() => respondToApproval(requestId, action)),
   );
   return server;
 }

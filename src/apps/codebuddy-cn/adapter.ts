@@ -12,7 +12,7 @@ import { FOCUS_FEATURE } from "./focus-keybinding";
 export const codebuddyAdapter: AppAdapter = {
   id: "codebuddy-cn",
   title: "CodeBuddy CN",
-  description: "新建对话、停止聊天、聚焦输入框、工具批准通知",
+  description: "新建对话、停止聊天、聚焦输入框、工具批准通知、外部工具批准",
   supportDescription: "支持已验证的 CodeBuddy 1.106.1 / genie 3.10.0 构建，同时校验原始资源摘要。",
   defaultAppPath: "/Applications/CodeBuddy CN.app",
   versions: {
@@ -93,12 +93,26 @@ export const codebuddyAdapter: AppAdapter = {
     {
       id: "approval-notification",
       title: "工具批准通知",
+      configurationNote:
+        "请在 CodeBuddy 原有 hooks 配置中设置 Notification，matcher 使用 permission_prompt；删除或禁用对应 hook 可停止通知动作。",
       description: "等待用户批准时执行 CodeBuddy 的 Notification / permission_prompt hooks",
       symbol: "notification",
       kind: "resource",
       fieldIds: [],
       resourceTarget: { adapter: focusHostAdapter, dataSubdirectory: "focus-keybinding/bridge" },
       summarize: () => "按 CodeBuddy Notification hooks 配置执行",
+    },
+    {
+      id: "approval-control",
+      title: "外部工具批准",
+      configurationNote:
+        "随 App 整体安装并重启生效。使用 npm run approval -- list 查询，再用 allow / reject / skip 和 request_id 回应；也可通过 MCP 的批准工具操作。",
+      description: "通过本机 Unix Socket 查询待确认工具，执行允许、拒绝或跳过",
+      symbol: "notification",
+      kind: "resource",
+      fieldIds: [],
+      resourceTarget: { adapter: focusHostAdapter, dataSubdirectory: "focus-keybinding/bridge" },
+      summarize: () => "本机 Unix Socket · allow / reject / skip",
     },
   ],
   validateSettings,

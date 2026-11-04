@@ -24,16 +24,21 @@ test("real stdio MCP client discovers tools, validates/registers executable Apps
     "get_app",
     "get_recipe_schema",
     "list_apps",
+    "list_pending_approvals",
     "preflight_app",
     "register_app",
     "register_items",
+    "respond_to_approval",
     "validate_recipe",
   ]);
   const ajv = new Ajv({ strict: false });
   for (const tool of tools.tools) {
     ajv.compile(tool.inputSchema);
     assert.equal(tool.inputSchema.type, "object");
-    assert.equal(tool.annotations?.readOnlyHint, !tool.name.startsWith("register_"));
+    assert.equal(
+      tool.annotations?.readOnlyHint,
+      !tool.name.startsWith("register_") && tool.name !== "respond_to_approval",
+    );
   }
   const call = async (name: string, args: Record<string, unknown> = {}) => {
     const response = await client.callTool({ name, arguments: args });
@@ -45,6 +50,11 @@ test("real stdio MCP client discovers tools, validates/registers executable Apps
   assert.ok(built.features.some((f: { id: string }) => f.id === "approval-notification"));
   const builtList = (await call("list_apps")).value.apps.find((a: { id: string }) => a.id === "codebuddy-cn");
   assert.ok(builtList.items.some((f: { id: string }) => f.id === "approval-notification"));
+  assert.ok(built.features.some((f: { id: string }) => f.id === "approval-control"));
+  assert.equal(
+    (await call("respond_to_approval", { requestId: "stale", action: "allow" })).response.isError,
+    true,
+  );
   const schema = (await call("get_recipe_schema")).value.schema;
   assert.equal(schema.$schema, "http://json-schema.org/draft-07/schema#");
   assert.equal(schema.properties.schemaVersion.const, 2);

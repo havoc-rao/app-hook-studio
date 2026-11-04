@@ -109,7 +109,7 @@ test("app installation distinguishes package permissions from native-only permis
 });
 
 test(
-  "whole-app plan is read-only; shared approval/focus resource installs once for four items",
+  "whole-app plan is read-only; shared approval/focus resource installs once for five items",
   localOnly,
   async (t) => {
     const f = await fixture();
@@ -117,7 +117,7 @@ test(
     const plan = await prepareAppInstall(f.adapter, f.data, defaultConfig(f.adapter));
     assert.deepEqual(
       plan.items.map((item) => item.id),
-      ["new-chat", "stop-chat", "focus-input", "approval-notification"],
+      ["new-chat", "stop-chat", "focus-input", "approval-notification", "approval-control"],
     );
     assert.equal(plan.restartRequired, true);
     assert.equal(plan.backups.length, 2);

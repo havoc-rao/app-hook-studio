@@ -1,4 +1,4 @@
-import { Action, ActionPanel, Icon, List, Toast, showToast } from "@raycast/api";
+import { Action, ActionPanel, Color, Icon, List, Toast, showToast } from "@raycast/api";
 import { useEffect, useState } from "react";
 import path from "node:path";
 import { AppAdapter, AppFeature } from "../core/contracts";
@@ -17,8 +17,10 @@ import {
 import { AddEntry, DraftEntries } from "./add-entry";
 import { ConfigureApplication } from "./configure-application";
 
+type FeatureStatus = { summary: string; installation: "已安装" | "待安装" | "需检查" };
+
 export function AppFeatures({ adapter }: { adapter: AppAdapter }) {
-  const [labels, setLabels] = useState<Record<string, string>>({});
+  const [labels, setLabels] = useState<Record<string, FeatureStatus>>({});
   const [enabledStates, setEnabledStates] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -77,7 +79,7 @@ export function AppFeatures({ adapter }: { adapter: AppAdapter }) {
       }
       const enabled: Record<string, boolean> = {};
       const entries = await Promise.all(
-        adapter.features.map(async (feature): Promise<[string, string]> => {
+        adapter.features.map(async (feature): Promise<[string, FeatureStatus]> => {
           if (feature.kind === "resource") {
             if (feature.enabledControl)
               enabled[feature.id] =
@@ -92,7 +94,10 @@ export function AppFeatures({ adapter }: { adapter: AppAdapter }) {
                 ready = false;
               }
             }
-            return [feature.id, `${feature.summarize(saved.settings)} · ${ready ? "已安装" : "待安装"}`];
+            return [
+              feature.id,
+              { summary: feature.summarize(saved.settings), installation: ready ? "已安装" : "待安装" },
+            ];
           }
           try {
             const preferences = await loadNativePreferences(
@@ -114,10 +119,19 @@ export function AppFeatures({ adapter }: { adapter: AppAdapter }) {
               !feature.resourceBridge || (bridgeStatus?.kind === "managed" && !bridgeStatus.upgradeRequired);
             return [
               feature.id,
-              `${preferences.enabled ? preferences.key : "已关闭"} · ${(!preferences.enabled || bridgeReady) && preferences.enabled === status.enabled && (!preferences.enabled || (preferences.key === status.binding?.key && status.binding?.command === feature.command)) ? "已安装" : "待安装"}`,
+              {
+                summary: preferences.key,
+                installation:
+                  (!preferences.enabled || bridgeReady) &&
+                  preferences.enabled === status.enabled &&
+                  (!preferences.enabled ||
+                    (preferences.key === status.binding?.key && status.binding?.command === feature.command))
+                    ? "已安装"
+                    : "待安装",
+              },
             ];
           } catch {
-            return [feature.id, "需检查配置"];
+            return [feature.id, { summary: feature.description, installation: "需检查" }];
           }
         }),
       );
@@ -201,13 +215,45 @@ export function AppFeatures({ adapter }: { adapter: AppAdapter }) {
           <List.Item
             key={feature.id}
             title={feature.title}
-            subtitle={feature.description}
+            subtitle={
+              labels[feature.id]?.summary === "已关闭"
+                ? feature.description
+                : (labels[feature.id]?.summary ?? feature.description)
+            }
             icon={icons[feature.symbol]}
             accessories={[
-              ...(enabledStates[feature.id] === undefined
-                ? []
-                : [{ tag: enabledStates[feature.id] ? "已启用" : "已关闭" }]),
-              { text: labels[feature.id] ?? "读取中…" },
+              {
+                text: labels[feature.id]?.installation ?? "读取中",
+                tooltip:
+                  labels[feature.id]?.installation === "已安装"
+                    ? "应用资源与已保存配置一致；修改后仍需重新打开应用生效。"
+                    : "保存配置后，按 ⌘Enter 统一安装。",
+              },
+              {
+                text:
+                  feature.kind === "resource" && !feature.enabledControl
+                    ? "随安装"
+                    : enabledStates[feature.id] === undefined
+                      ? "读取中"
+                      : enabledStates[feature.id]
+                        ? "已启用"
+                        : "已关闭",
+                icon: {
+                  source: Icon.CircleFilled,
+                  tintColor:
+                    feature.kind === "resource" && !feature.enabledControl
+                      ? Color.SecondaryText
+                      : enabledStates[feature.id] === undefined
+                        ? Color.SecondaryText
+                        : enabledStates[feature.id]
+                          ? Color.Green
+                          : Color.SecondaryText,
+                },
+                tooltip:
+                  feature.kind === "resource" && !feature.enabledControl
+                    ? "此功能随 App 整体安装，使用方式见功能配置。"
+                    : "已保存的启用状态。按 ⌘⇧E 切换，再按 ⌘Enter 安装生效。",
+              },
             ]}
             actions={
               <ActionPanel>

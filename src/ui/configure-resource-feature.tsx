@@ -97,12 +97,7 @@ export function ConfigureResourceFeature({
     >
       <Form.Description title={feature.title} text={feature.description} />
       <Form.Description title="当前生效" text={status} />
-      {feature.resourceTarget && !feature.fieldIds.length && (
-        <Form.Description
-          title="通知动作"
-          text="此点位随 App 整体安装。请在 CodeBuddy 原有 hooks 配置中设置 Notification，matcher 使用 permission_prompt；删除或禁用对应 hook 可停止通知动作。"
-        />
-      )}
+      {feature.configurationNote && <Form.Description title="使用方式" text={feature.configurationNote} />}
       {feature.enabledControl && typeof feature.enabledControl.disabled !== "boolean" && (
         <Form.Checkbox
           id="featureEnabled"

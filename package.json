@@ -27,6 +27,7 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "cli": "tsx scripts/cli.ts",
+    "approval": "tsx scripts/approval.ts",
     "format": "prettier --write src scripts tests docs README.md package.json tsconfig.json",
     "install:local": "ray build -e dist",
     "check:bundle": "node scripts/check-bundle.cjs dist/manage-hooks.js",

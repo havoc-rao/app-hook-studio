@@ -50,7 +50,7 @@ test(
       { timeout: 20000, maxBuffer: 8192 },
     );
     const report = JSON.parse(stdout);
-    assert.equal(report.items, 4);
+    assert.equal(report.items, 5);
     assert.equal(report.checks, 11);
     assert.equal(report.restartRequired, true);
     assert.ok(report.heapUsed < 100 * 1024 * 1024);

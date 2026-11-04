@@ -1,3 +1,4 @@
+import { renderApprovalHookV3 } from "../src/apps/codebuddy-cn/approval-runtime-v3";
 import { assertSymbolExport } from "../src/apps/codebuddy-cn/bundle-contract";
 import { FOCUS_BINDINGS } from "../src/apps/codebuddy-cn/focus-bindings";
 import { renderFocusHostV1 } from "../src/apps/codebuddy-cn/focus-host-runtime-v1";
@@ -307,7 +308,7 @@ test(
 );
 
 test(
-  "already-installed focus host v1 upgrades to v3 while preserving original identity",
+  "already-installed focus host v1 upgrades to v4 while preserving original identity",
   { skip: !hostPath },
   async () => {
     const source = await fs.readFile(hostPath!, "utf8"),
@@ -321,7 +322,7 @@ test(
     assert.equal(known.kind, "managed");
     assert.equal(known.original, source);
     const updated = focusHostAdapter.patch(known.original, {}, profile);
-    assert.ok(updated.includes("APP_HOOK_STUDIO_FOCUS_HOST v3"));
+    assert.ok(updated.includes("APP_HOOK_STUDIO_FOCUS_HOST v4"));
     assert.ok(updated.includes("__webpack_require__(637830).ChatViewService"));
     focusHostAdapter.verifyPatch(updated, profile);
     assert.equal(focusHostAdapter.analyze(updated, profile).original, source);
@@ -330,7 +331,7 @@ test(
 );
 
 test(
-  "installed v2 focus bridge upgrades to a single v3 focus/approval block and recovers exact bytes",
+  "installed v2 focus bridge upgrades to a single v4 focus/approval block and recovers exact bytes",
   { skip: !hostPath },
   async () => {
     const source = await fs.readFile(hostPath!, "utf8"),
@@ -346,7 +347,7 @@ test(
     assert.equal(known.upgradeRequired, true);
     const upgraded = focusHostAdapter.patch(known.original, {}, profile);
     focusHostAdapter.verifyPatch(upgraded, profile);
-    assert.equal(upgraded.split("/* APP_HOOK_STUDIO_FOCUS_HOST v3 */").length, 2);
+    assert.equal(upgraded.split("/* APP_HOOK_STUDIO_FOCUS_HOST v4 */").length, 2);
     assert.ok(upgraded.includes("notifyPermissionPrompt(...args)"));
     assert.equal(focusHostAdapter.analyze(upgraded, profile).original, source);
     assert.equal(focusHostAdapter.analyze(upgraded, profile).upgradeRequired, false);
@@ -356,5 +357,37 @@ test(
         profile,
       ),
     );
+  },
+);
+
+test("module export verification does not confuse short module IDs with numeric suffixes", () => {
+  const source = '{5239:(m,e)=>{e.ToolService=Symbol("ToolService")},175239:(m,e)=>{e.other=1}}';
+  assertSymbolExport(source, 5239, "ToolService");
+  assert.throws(() =>
+    assertSymbolExport('{175239:(m,e)=>{e.ToolService=Symbol("ToolService")}}', 5239, "ToolService"),
+  );
+});
+
+test(
+  "installed v3 notification bridge upgrades to v4 with the same original and single owned block",
+  { skip: !hostPath },
+  async () => {
+    const source = await fs.readFile(hostPath!, "utf8"),
+      profile = { ...HOST_PROFILE, label: "test" };
+    const previous = source.replace(
+      HOST_PROFILE.anchor,
+      "/* APP_HOOK_STUDIO_FOCUS_HOST v3 */\n" +
+        renderFocusHost() +
+        renderApprovalHookV3() +
+        "/* APP_HOOK_STUDIO_FOCUS_HOST_END */\n" +
+        HOST_PROFILE.anchor,
+    );
+    const known = focusHostAdapter.analyze(previous, profile);
+    assert.equal(known.upgradeRequired, true);
+    const updated = focusHostAdapter.patch(known.original, {}, profile);
+    focusHostAdapter.verifyPatch(updated, profile);
+    assert.equal(focusHostAdapter.analyze(updated, profile).original, source);
+    assert.equal(updated.split("APP_HOOK_STUDIO_FOCUS_HOST v4").length, 2);
+    assert.ok(updated.includes("respondToPermission(callId"));
   },
 );

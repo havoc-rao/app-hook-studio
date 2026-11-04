@@ -1,11 +1,14 @@
+import { renderApprovalControl } from "./approval-control-runtime";
+
 /** Runs in the existing extension activation scope, alongside the focus bridge. */
-export function renderApprovalHook(): string {
+export function renderApprovalHook(options: { control?: boolean; directory?: string } = {}): string {
   return `;{
-  let disposed = false;
+  let disposed = false, control;
   const undo = [], waiting = new WeakMap();
   const report = error => { try { console.error("[App Hook Studio: permission_prompt]", error); } catch {} };
   const dispose = () => {
     disposed = true;
+    control?.dispose();
     for (const restore of undo.splice(0).reverse()) restore();
   };
   try {
@@ -14,10 +17,11 @@ export function renderApprovalHook(): string {
     const protocol = __webpack_require__(946785);
     const NotificationManager = __webpack_require__(176998).NotificationManager;
     const pending = __webpack_require__(445368).ToolState.PENDING;
+    control = ${options.control === false ? "undefined" : renderApprovalControl(options.directory)};
     const notify = (listener, manager, callId, tool, subagent) => {
       if (disposed || tool.state !== pending) return;
       // Forwarded approvals carry a parent task instance; the subagent listener owns that event.
-      if (!subagent && tool.id !== callId) return;
+      if (!subagent && tool.id !== callId && manager.getConfirmTarget?.(callId) !== tool) return;
       const stamp = tool.confirmRequestedAt;
       if (waiting.has(tool) && waiting.get(tool) === stamp) return;
       waiting.set(tool, stamp);
@@ -27,6 +31,7 @@ export function renderApprovalHook(): string {
       const agent = listener.contextManager?.getContext(sessionId)?.agent;
       const cwd = context.workingDirectory || agent?.getUserContext?.()?.env?.workspace;
       // Never substitute the extension host's process.cwd() for the user's workspace.
+      const request = control?.register({ listener, manager, callId, tool, subagent, sessionId, cwd });
       if (!cwd) throw new Error("Missing approval workspace");
       const hookManager = manager.toolHookExecutor?.hookManager || container.get(protocol.HookManager);
       let transcript = manager.transcriptPath || "";
@@ -35,7 +40,11 @@ export function renderApprovalHook(): string {
       }
       const message = "Tool " + protocol.normalizeToolName(tool.name) + " requires user approval (" + callId + ")" +
         (tool.safetyConfirmMessage || tool.hookConfirmMessage ? ": " + (tool.safetyConfirmMessage || tool.hookConfirmMessage) : "");
-      const notification = new NotificationManager(hookManager, undefined, cwd);
+      const extendedManager = request ? { executeHooks: (event, payload) => hookManager.executeHooks(event, {
+        ...payload, request_id: request.request_id, tool_call_id: callId,
+        tool_name: protocol.normalizeToolName(tool.name), approval_channel: request.approval_channel,
+      }) } : hookManager;
+      const notification = new NotificationManager(extendedManager, undefined, cwd);
       // Snapshot per-manager context before asynchronous execution; no singleton session state.
       const args = [message, sessionId, transcript, manager.generationId || agent?.requestId,
         manager.model || listener.modelId || agent?.getModel?.()?.id, manager.client, manager.version];
@@ -65,6 +74,7 @@ export function renderApprovalHook(): string {
       for (const name of ["onToolExecutionStart", "onToolExecutionComplete"]) {
         wrap(prototype, name, original => function(manager, callId, tool, ...rest) {
           waiting.delete(tool);
+          control?.forget(tool);
           return original.call(this, manager, callId, tool, ...rest);
         });
       }

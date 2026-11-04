@@ -6,11 +6,11 @@ function object(value: unknown): Record<string, unknown> | undefined {
 }
 /** Parse only the selected factory; never evaluate the target or build a whole-bundle AST. */
 export function assertSymbolExport(source: string, moduleId: number, exportName: string): void {
-  const marker = `${moduleId}:`,
-    at = source.indexOf(marker);
-  if (at < 0 || source.indexOf(marker, at + marker.length) !== -1)
-    throw new Error(`服务导出契约失败：模块 ${moduleId} 不唯一或不存在。`);
-  const parsed = object(parseExpressionAt(source, at + marker.length, { ecmaVersion: "latest" }));
+  // Match a complete object key; 5239 must not match the suffix of 175239.
+  const matcher = new RegExp(`(?:^|[,{])${moduleId}:`, "g"),
+    match = matcher.exec(source);
+  if (!match || matcher.exec(source)) throw new Error(`服务导出契约失败：模块 ${moduleId} 不唯一或不存在。`);
+  const parsed = object(parseExpressionAt(source, match.index + match[0].length, { ecmaVersion: "latest" }));
   const first = parsed?.type === "SequenceExpression" ? (parsed.expressions as unknown[])[0] : parsed;
   const factory = object(first);
   if (!factory || !["FunctionExpression", "ArrowFunctionExpression"].includes(String(factory.type)))

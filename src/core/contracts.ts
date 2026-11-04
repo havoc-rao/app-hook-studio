@@ -24,6 +24,7 @@ export type AppFeature = {
   | {
       kind: "resource";
       fieldIds: readonly string[];
+      configurationNote?: string;
       /** Companion resource, shared by adapter ID with native bridges. */
       resourceTarget?: { adapter: AppAdapter; dataSubdirectory: string };
       enabledControl?: { field: string; disabled: SettingValue; enabled: SettingValue };

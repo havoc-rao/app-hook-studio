@@ -8,7 +8,7 @@ import { toIdeShortcut } from "../src/core/shortcuts";
 test("CodeBuddy exposes shortcut features and the shared approval notification resource", () => {
   assert.deepEqual(
     codebuddyAdapter.features.map((feature) => feature.id),
-    ["new-chat", "stop-chat", "focus-input", "approval-notification"],
+    ["new-chat", "stop-chat", "focus-input", "approval-notification", "approval-control"],
   );
   const fieldIds = new Set(codebuddyAdapter.fields.map((field) => field.id));
   for (const feature of codebuddyAdapter.features) {

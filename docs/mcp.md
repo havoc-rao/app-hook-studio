@@ -1,6 +1,6 @@
 # App Hook Studio MCP
 
-独立本地 stdio 服务，与 Raycast 共用 `~/Library/Application Support/App Hook Studio/`。没有 HTTP 端口，也无需 Raycast 常驻。MCP 只提供查询、注册和只读预检查；修改目标 App 的 Install / Restore 留在 Raycast。注册产生可安装适配器，与 UI 的待分析草稿是两个明确的状态。
+独立本地 stdio 服务，与 Raycast 共用 `~/Library/Application Support/App Hook Studio/`。没有 HTTP 端口，也无需 Raycast 常驻。MCP 提供查询、注册、只读预检查，以及 CodeBuddy 的运行时批准查询和回应；修改目标 App 资源的 Install / Restore 留在 Raycast。注册产生可安装适配器，与 UI 的待分析草稿是两个明确的状态。
 
 ## 连接
 
@@ -26,6 +26,15 @@
 `list_apps` 和 `get_app {"appId":"codebuddy-cn"}` 已包含 `approval-notification`（工具批准通知），与 Raycast 使用同一内置适配器，无需再调用 `register_items`。该工具不能向内置 App 添加 Recipe。重新构建 MCP 并重启客户端连接后即可发现新功能；Raycast 重新构建安装后，在 CodeBuddy CN 下显示此项。
 
 `preflight_app {"appId":"codebuddy-cn"}` 会把该项纳入整体安装计划，与聚焦桥共用同一扩展资源、备份和恢复路径。MCP 不写入目标 App；在 Raycast 整体 Install 后重启 CodeBuddy。通知使用 CodeBuddy 原有 `Notification` hooks，matcher 为 `permission_prompt`，详见[点位说明](codebuddy-approval-investigation.md)。
+
+## CodeBuddy 运行时批准
+
+内置 `approval-control` 功能随 v4 扩展桥安装，支持通过当前用户的 Unix Socket 访问运行中的 CodeBuddy：
+
+- `list_pending_approvals {}`：只读查询各个本机窗口的待确认工具及本轮 `request_id`。
+- `respond_to_approval {"requestId":"<request_id>","action":"allow"}`：向原应用提交本轮决定，action 也支持 `reject`、`skip`。该工具是运行时写操作，`allow` 可能执行对应工具；应依据用户明确决定使用。
+
+旧 ID、UI 已处理的确认、结束的会话和不匹配的路由会拒绝。`submitted` 只代表决定已提交。未安装或未重启到新版本时可能没有可用通道。详细协议与测试边界见[外部批准说明](codebuddy-approval-control.md)。
 
 ## agent 的工作顺序
 

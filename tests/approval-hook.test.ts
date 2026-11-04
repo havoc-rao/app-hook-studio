@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
 import vm from "node:vm";
+import { promises as fs } from "node:fs";
+import net from "node:net";
+import path from "node:path";
+import crypto from "node:crypto";
+import { listPendingApprovals } from "../src/apps/codebuddy-cn/approval-client";
 import { renderApprovalHook } from "../src/apps/codebuddy-cn/approval-runtime";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -10,6 +15,7 @@ function fixture(
     missingSubMethod?: boolean;
     originalThrows?: boolean;
     autoApprove?: boolean;
+    controlDirectory?: string;
   } = {},
 ) {
   const calls: { cwd: string; args: unknown[] }[] = [],
@@ -48,45 +54,72 @@ function fixture(
     Object.defineProperty(Sub.prototype, "onToolExecutionComplete", { value: undefined });
   const originalMain = Main.prototype.onUserConfirmRequired;
   const originalSub = Sub.prototype.onUserConfirmRequired;
-  const hookManager = {};
+  const payloads: Record<string, unknown>[] = [];
+  const hookManager = {
+    executeHooks: (_event: string, payload: Record<string, unknown>) => {
+      payloads.push(payload);
+      return Promise.resolve({ allowed: true });
+    },
+  };
   class Notifications {
     constructor(
-      manager: unknown,
+      private manager: typeof hookManager,
       _logger: unknown,
       private cwd: string,
     ) {
-      assert.equal(manager, hookManager);
+      if (!options.controlDirectory) assert.equal(manager, hookManager);
     }
     async notifyPermissionPrompt(...args: unknown[]) {
       calls.push({ cwd: this.cwd, args });
+      await this.manager.executeHooks("Notification", {
+        hook_event_name: "Notification",
+        notification_type: "permission_prompt",
+        session_id: args[1],
+        message: args[0],
+      });
       if (options.failure) throw new Error("notification failed");
     }
   }
-  vm.runInNewContext(renderApprovalHook(), {
-    ir: { subscriptions },
-    console: { error: (...args: unknown[]) => errors.push(args) },
-    container: {
-      get: () => {
-        throw new Error("Unexpected fallback");
+  vm.runInNewContext(
+    renderApprovalHook({ control: !!options.controlDirectory, directory: options.controlDirectory }),
+    {
+      process,
+      Buffer,
+      setInterval,
+      clearInterval,
+      ir: { subscriptions },
+      console: { error: (...args: unknown[]) => errors.push(args) },
+      container: {
+        get: () => {
+          throw new Error("Unexpected fallback");
+        },
+      },
+      __webpack_require__(id: number) {
+        switch (id) {
+          case 777030:
+            return net;
+          case 973024:
+            return require("node:fs");
+          case 176760:
+            return path;
+          case 977598:
+            return crypto;
+          case 73280:
+            return { ToolManagerListener: Main };
+          case 748749:
+            return { SubagentToolListener: Sub };
+          case 946785:
+            return { normalizeToolName: (name: string) => (name === "execute_command" ? "Bash" : name) };
+          case 176998:
+            return { NotificationManager: Notifications };
+          case 445368:
+            return { ToolState: { PENDING: "pending" } };
+          default:
+            throw new Error(`Unexpected module ${id}`);
+        }
       },
     },
-    __webpack_require__(id: number) {
-      switch (id) {
-        case 73280:
-          return { ToolManagerListener: Main };
-        case 748749:
-          return { SubagentToolListener: Sub };
-        case 946785:
-          return { normalizeToolName: (name: string) => (name === "execute_command" ? "Bash" : name) };
-        case 176998:
-          return { NotificationManager: Notifications };
-        case 445368:
-          return { ToolState: { PENDING: "pending" } };
-        default:
-          throw new Error(`Unexpected module ${id}`);
-      }
-    },
-  });
+  );
   const manager = (session = "session-a") => ({
     sessionId: session,
     transcriptPath: `/transcripts/${session}`,
@@ -113,6 +146,7 @@ function fixture(
     tool,
     originalResult,
     originalMain,
+    payloads,
     originalSub,
     dispose: () => subscriptions.forEach((item) => item.dispose()),
   };
@@ -219,4 +253,32 @@ test("a tool that no longer awaits approval after the original listener does not
   await tick();
   assert.equal(h.calls.length, 0);
   h.dispose();
+});
+
+test("real notification wrapper publishes the same structured request ID and socket channel as discovery", async (t) => {
+  const root = await fs.mkdtemp("/private/tmp/ahs-hook-control-");
+  const h = fixture({ controlDirectory: root });
+  t.after(async () => {
+    h.dispose();
+    await new Promise((resolve) => setImmediate(resolve));
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  for (let i = 0; i < 100 && !(await listPendingApprovals(root)).windows.length; i++)
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  const listener = new h.Main(),
+    tool = h.tool();
+  assert.equal(listener.onUserConfirmRequired(h.manager(), tool.id, tool), h.originalResult);
+  await tick();
+  const current = await listPendingApprovals(root);
+  assert.equal(current.requests.length, 1);
+  assert.equal(h.payloads[0].request_id, current.requests[0].request_id);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(h.payloads[0].approval_channel)),
+    current.requests[0].approval_channel,
+  );
+  assert.equal(h.payloads[0].hook_event_name, "Notification");
+  assert.equal(h.payloads[0].notification_type, "permission_prompt");
+  assert.equal(h.payloads[0].tool_name, "Bash");
+  (listener.onToolExecutionComplete as (...args: unknown[]) => unknown)(h.manager(), tool.id, tool);
+  assert.equal((await listPendingApprovals(root)).requests.length, 0);
 });
