@@ -1,15 +1,15 @@
-import { Action, ActionPanel, Icon, List } from "@raycast/api";
+import { Action, ActionPanel, Icon, List, Toast, showToast } from "@raycast/api";
 import { useEffect, useState } from "react";
 import path from "node:path";
-import { AppAdapter } from "../core/contracts";
-import { loadConfig, appDataDirectory } from "../core/storage";
+import { AppAdapter, AppFeature } from "../core/contracts";
+import { loadConfig, saveConfig, appDataDirectory } from "../core/storage";
 import { PatchEngine } from "../core/engine";
 import { featureKeybindingInstaller } from "../installers/ide-keybinding";
 import { ConfigureResourceFeature } from "./configure-resource-feature";
 import { ConfigureNativeFeature } from "./configure-native-feature";
 import { InstallApp } from "./install-app";
 import { ENTER_SHORTCUT, APP_INSTALL_SHORTCUT, ADD_ENTRY_SHORTCUT } from "./shortcuts";
-import { loadNativePreferences } from "../application/app-install";
+import { loadNativePreferences, saveNativePreferences } from "../application/app-install";
 import { AddEntry, DraftEntries } from "./add-entry";
 import { ConfigureApplication } from "./configure-application";
 
@@ -20,6 +20,44 @@ export function AppFeatures({ adapter }: { adapter: AppAdapter }) {
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
   const refresh = () => setRevision((value) => value + 1);
+  const [saving, setSaving] = useState(false);
+  async function toggleFeature(feature: AppFeature) {
+    if (saving) return;
+    setSaving(true);
+    try {
+      let enabled: boolean;
+      if (feature.kind === "resource") {
+        const control = feature.enabledControl;
+        if (!control) return;
+        const config = await loadConfig(adapter);
+        enabled = config.settings[control.field] === control.disabled;
+        await saveConfig(adapter, {
+          ...config,
+          settings: { ...config.settings, [control.field]: enabled ? control.enabled : control.disabled },
+        });
+      } else {
+        const directory = path.join(appDataDirectory(adapter.id), feature.dataSubdirectory);
+        const preferences = await loadNativePreferences(feature, directory);
+        enabled = !preferences.enabled;
+        await saveNativePreferences(directory, { ...preferences, enabled });
+      }
+      setEnabledStates((current) => ({ ...current, [feature.id]: enabled }));
+      refresh();
+      await showToast(
+        Toast.Style.Success,
+        `已保存：${enabled ? "启用" : "关闭"}${feature.title}`,
+        "请执行 App 统一安装，使变更生效（⌘Enter）。",
+      );
+    } catch (reason) {
+      await showToast(
+        Toast.Style.Failure,
+        "保存失败",
+        reason instanceof Error ? reason.message : String(reason),
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
   useEffect(() => {
     let active = true;
     (async () => {
@@ -92,7 +130,7 @@ export function AppFeatures({ adapter }: { adapter: AppAdapter }) {
   return (
     <List
       navigationTitle={adapter.title}
-      isLoading={loading}
+      isLoading={loading || saving}
       searchBarPlaceholder="选择要配置的功能…"
       actions={
         <ActionPanel>
@@ -163,7 +201,7 @@ export function AppFeatures({ adapter }: { adapter: AppAdapter }) {
             actions={
               <ActionPanel>
                 <Action.Push
-                  title={`配置${feature.title}`}
+                  title="配置功能"
                   shortcut={ENTER_SHORTCUT}
                   icon={Icon.Gear}
                   target={
@@ -174,6 +212,14 @@ export function AppFeatures({ adapter }: { adapter: AppAdapter }) {
                     )
                   }
                 />
+                {enabledStates[feature.id] !== undefined && (
+                  <Action
+                    title={enabledStates[feature.id] ? "关闭此功能" : "启用此功能"}
+                    icon={Icon.Power}
+                    shortcut={{ modifiers: ["cmd", "shift"], key: "e" }}
+                    onAction={() => toggleFeature(feature)}
+                  />
+                )}
                 <Action.Push
                   title={`Install / 安装 ${adapter.title}`}
                   icon={Icon.Download}
