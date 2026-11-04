@@ -56,6 +56,37 @@ class UnitTests(unittest.TestCase):
             for version, expected in vector['versions'].items():
                 self.assertEqual(h.digest(h.render_webview(vector['settings'], int(version), runtime).encode()), expected)
 
+    @unittest.skipUnless(shutil.which("node"), "Node required for runtime regression")
+    def test_new_chat_with_real_chatinput_local_require_shadow(self):
+        manifest, runtime = h.runtime_files()
+        config = {"newChatEnabled": True, "newChatShortcut": "ctrl+cmd+n", "stopMode": "double-escape", "stopShortcut": "cmd+alt+.", "doubleEscapeMs": 500, "scope": "panel"}
+        hook = h.render_webview(config, 3, runtime)
+        program = r'''const assert = require('node:assert/strict');
+let created=0, handler;
+const token=Symbol('NewChatViewServie');
+const r=id=> {
+  if(id==='wGu3')return {ContainerUtil:{get(value){assert.equal(value,token);return {startNewChat(){created++}}}}};
+  if(id==='vFXG')return {NewChatViewServie:token};
+  throw Error('Unknown module '+id);
+};
+class Node {}
+const input=new Node();
+input.contains=value=>value===input;
+input.getClientRects=()=>[{}];
+input.addEventListener=(type,fn)=>{if(type==='keydown')handler=fn};
+const m={useRef:value=>({current:value}),useEffect:fn=>fn()};
+const Ne=false, Re={current:input}, Ae=()=>input, le=false, Ce=()=>{};
+const window={addEventListener(){}};
+''' + runtime['webview-require-v3.js'] +             'function ChatInput(){var r,a,i,l,s,c,q,$,K,Z,Q,Y,X,J,ee,te,ne,re;\n' + hook + r'''}
+ChatInput();
+let consumed=false;
+handler({target:input,code:'KeyN',key:'n',ctrlKey:true,metaKey:true,altKey:false,shiftKey:false,
+  preventDefault(){consumed=true},stopImmediatePropagation(){}});
+setImmediate(()=>{assert.equal(consumed,true);assert.equal(created,1)});
+'''
+        result = subprocess.run(['node', '-e', program], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_running_app_blocks_mutation(self):
         result = subprocess.CompletedProcess([], 0, '/Applications/CodeBuddy CN.app/Contents/MacOS/Electron\n', '')
         with patch.object(h.subprocess, 'run', return_value=result), self.assertRaises(ValueError):
@@ -96,22 +127,36 @@ class RealSourceTests(unittest.TestCase):
         h.apply(changed, self.manifest, self.runtime, self.directory)
         state = h.read_state(self.directory)
         self.assertEqual(state['config']['focus'], 'cmd+shift+i')
-        self.assertEqual(h.jsonc_document(self.keybindings.read_text())[0][-1]['key'], 'cmd+shift+i')
+        self.assertIn({**RULE, 'key': 'cmd+shift+i'}, h.jsonc_document(self.keybindings.read_text())[0])
         h.restore(changed, self.manifest, self.directory)
         self.assertEqual([p.read_bytes() for p in (self.webview, self.host, self.keybindings)], before)
         h.restore(changed, self.manifest, self.directory)
+
+    def test_global_new_chat_binding_has_no_when_and_can_update_while_app_runs(self):
+        h.apply(self.options, self.manifest, self.runtime, self.directory)
+        rules = h.jsonc_document(self.keybindings.read_text())[0]
+        expected = {"key": "ctrl+cmd+n", "command": "runCommands", "args": {"commands": [h.NEW_CHAT_COMMAND]}}
+        self.assertIn(expected, rules)
+        self.assertIn(RULE, rules)
+        changed = {**self.options, "focus": "ctrl+cmd+j"}
+        with patch.object(h, 'require_closed', side_effect=AssertionError('resource write attempted')):
+            h.apply(changed, self.manifest, self.runtime, self.directory)
+        source = h.edit_binding(self.keybindings.read_text(), None, h.NEW_CHAT_COMMAND, h.NEW_CHAT_MARKER)
+        self.assertNotIn(expected, h.jsonc_document(source)[0])
+        self.assertIn({**RULE, "key": "ctrl+cmd+j"}, h.jsonc_document(source)[0])
 
     def test_unknown_target_backup_damage_and_later_user_edits_are_preserved(self):
         self.host.write_bytes(b'unknown')
         with self.assertRaises(ValueError): h.apply(self.options, self.manifest, self.runtime, self.directory)
         shutil.copyfile(os.environ['CODEBUDDY_TEST_HOST'], self.host)
         h.apply(self.options, self.manifest, self.runtime, self.directory)
-        edited = self.keybindings.read_bytes() + b'// later user edit\n'
+        installed = self.keybindings.read_bytes()
+        edited = installed + b'// later user edit\n'
         self.keybindings.write_bytes(edited)
         with self.assertRaises(ValueError): h.restore(self.options, self.manifest, self.directory)
         self.assertEqual(self.keybindings.read_bytes(), edited)
         state = h.read_state(self.directory)
-        self.keybindings.write_bytes(h.edit_binding('// keep\n[{"key":"cmd+k","command":"user.keep"},]\n', RULE, self.manifest['focusCommand']).encode())
+        self.keybindings.write_bytes(installed)
         self.assertIn(h.digest(self.keybindings.read_bytes()), state['targets']['keybindings']['accepted'])
         (self.directory / 'host.before').write_bytes(b'broken backup')
         with self.assertRaises(ValueError): h.restore(self.options, self.manifest, self.directory)

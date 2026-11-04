@@ -167,3 +167,28 @@ v3 在 ChatInput 外通过带标记的代码块保存 `cbHotkeysRequire`，新�
 标记管理，因此在代码编辑器等区域也能触发。终端沿用 IDE 对 `runCommands`
 的分发；显式启用 `terminal.integrated.sendKeybindingsToShell` 时仍可能交给 shell。
 仅快捷键配置发生变化时允许在线更新；修改 App JS 资源仍要求完全退出。
+
+## Remote SSH 资源补丁
+
+`remote_hotkeys.py` 从本机通过 SSH 标准输入执行临时 Python 工作代码，不在远端安装辅助程序。
+目前只支持服务端 commit `8e9c06cb4efccd833fc8edb84123652746908a7d`、CodeBuddy 1.106.1 / genie 3.10.0。
+它单独校验远程宿主原文摘要 `17595b239ec1ac1e54d2a3bc726745fc8d9c24a49fe1361414c3dccdd3acc919`，不放宽本机 profile。
+
+```sh
+python3 remote_hotkeys.py preflight --host root@example.com --port 36000
+python3 remote_hotkeys.py apply --host root@example.com --port 36000
+python3 remote_hotkeys.py status --host root@example.com --port 36000
+python3 remote_hotkeys.py restore --host root@example.com --port 36000
+```
+
+远程 `extensions/genie/out/extension/index.js` 在 `activate()` 等待 `doActivate()` 后注册聚焦命令，
+使用已有 provider 向当前 Webview 发送聚焦请求并等待确认。远程提供的 Webview 文件安装 v3 hook，
+提供聚焦接收器和聊天范围内双 Esc 停止。新建聊天和聚焦的 IDE 快捷键仍由本机 `hotkeys.py` 管理。
+
+备份位于远程对应的 `stable-<commit>/app-hook-studio-remote-backup/`，含 `host.before`、
+`webview.before` 和 `state.json`；重复安装保留首次备份。外部修改、损坏备份或未知构建会拒绝写入。
+两份文件分别原子替换，不保证跨文件事务；中断后可重试或恢复。仅写磁盘资源，安装与恢复后都需重新连接远程窗口
+（必要时重新加载窗口或重启远程扩展宿主）；脚本不结束现有会话，也不自动重启服务。
+服务端更新到新 commit 后需要重新分析，备份不会自动迁移。
+
+远程默认 `python3` 必须为 3.9+；可用 `--python /absolute/path/to/python3` 指定已有解释器，不修改远程默认 Python。
