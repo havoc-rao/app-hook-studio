@@ -20,13 +20,41 @@ python3 hotkeys.py apply
 
 | 功能 | 默认快捷键 | 范围 |
 | --- | --- | --- |
-| 新建对话 | Ctrl+⌘+N | 聊天面板 |
+| 新建对话 | Ctrl+⌘+N | CodeBuddy 窗口内 |
 | 停止生成 | 500ms 内 Esc → Esc | 聊天面板，生成中 |
 | 聚焦输入框 | ⌘I | CodeBuddy 窗口内，包括编辑器、默认设置下的终端 |
 
 按住 Esc 不算两次；第一次不拦截。聚焦调用原输入框 API，并等待焦点确认，不会新建对话或清空草稿。若显式配置了 `terminal.integrated.sendKeybindingsToShell: true`，终端仍可能把快捷键交给 shell；脚本不会擅自修改该偏好。
 
 `preflight` / `status` 只读，可以在 App 运行时执行。`apply` / `restore` 要求 App 完全退出，包括写入或更新包内备份记录时。输出为 JSON，便于终端或 code-agent 查看。
+
+## 更新配置必须先恢复
+
+首次安装可直接 `preflight` → `apply`。之后每次重新安装或更新配置（包括开关、改键及相同配置重装），都必须先执行 `restore`：
+
+```sh
+# 保存工作，⌘Q 完全退出 CodeBuddy
+python3 hotkeys.py restore
+# 编辑 config.json 后检查、安装
+python3 hotkeys.py preflight --config config.json
+python3 hotkeys.py apply --config config.json
+# 重新打开 CodeBuddy
+```
+
+使用自定义 `--app`、`--keybindings`、`--data-dir` 时，restore 必须指向原安装目标和备份；不要用新配置里的其他路径去恢复旧安装。
+
+`apply` 检查安装记录、备份摘要和当前原文。发现未恢复的 backup/安装记录（`applied`、`applying` 等）、无记录的遗留备份或残留补丁时直接报错，提示先恢复；不会自动 restore，也不覆盖现有安装。中途失败也必须先 restore 再安装。
+
+**restore 会保留备份目录。** 只有状态为 `restored`、文件与备份一致且两份 JS 都是已验证原文时，才允许复用保留的备份进行下一次 apply。不需要也不应手动删除备份来绕过检查。
+
+远程同样先恢复，再安装，所有命令使用同一 SSH 目标、端口和解释器：
+
+```sh
+python3 remote_hotkeys.py restore --host user@example.com --port 36000
+python3 remote_hotkeys.py preflight --host user@example.com --port 36000 --config config.json
+python3 remote_hotkeys.py apply --host user@example.com --port 36000 --config config.json
+# 重新连接远程窗口；必要时重新加载窗口或重启远程扩展宿主
+```
 
 ## 用配置文件自定义快捷键（推荐）
 
@@ -63,7 +91,7 @@ cp config.example.json config.json
 
 例如，把聚焦改成 `cmd+shift+i`、停止改成 `cmd+alt+.`，修改对应的 `focus`、`stop` 值即可。JSON 不支持注释，字符串使用双引号。
 
-编辑后，先检查，再退出 App 并应用：
+首次安装时，先检查，再退出 App 并应用；已安装则先按上节执行 `restore`：
 
 ```sh
 python3 hotkeys.py preflight --config config.json
@@ -71,7 +99,7 @@ python3 hotkeys.py preflight --config config.json
 python3 hotkeys.py apply --config config.json
 ```
 
-**只修改 JSON 不会生效。必须重新执行 `apply --config config.json`，再重新打开 CodeBuddy。** 首次安装时不传 `--config` 会使用默认配置；安装过以后，不传配置文件会沿用此体验包已保存的设置。
+**只修改 JSON 不会生效。已安装时必须先 `restore`，再 `apply --config config.json`，最后重新打开 CodeBuddy。** 首次安装时不传 `--config` 会使用默认配置；安装过以后，不传配置文件会沿用此体验包已保存的设置。
 
 配置优先级：默认值 → 此快速体验包此前保存的设置 → `--config` 文件 → 显式命令行参数。预检查不会保存配置。即使只调整一项，也会按整个 App 统一应用配置。
 
@@ -139,7 +167,7 @@ python3 hotkeys.py restore
 
 兼容旧版放在 `~/Library/Application Support/CodeBuddy Hotkeys Quickstart/<应用路径摘要>/` 的活动记录：若包内没有记录，会继续使用旧备份，不会丢失最初状态；先 `restore` 后，再次默认 `apply` 就使用新的包内备份设计。
 
-为避免抹掉后续手工修改，如果文件在体验后被其他工具或用户改写，会拒绝继续安装/恢复，保留现场和备份供检查。不要同时用两个工具改同一份 App；可以先恢复快速体验，再继续使用 Raycast。跨文件写入不是原子事务，中途失败会列出已完成项；记录预先保存，可重试或恢复。
+为避免抹掉后续手工修改，如果文件在体验后被其他工具或用户改写，会拒绝继续安装/恢复，保留现场和备份供检查。不要同时用两个工具改同一份 App；可以先恢复快速体验，再继续使用 Raycast。跨文件写入不是原子事务，中途失败会列出已完成项；记录预先保存，先 restore 再重新安装。
 
 ## 权限与检查边界
 
@@ -166,7 +194,7 @@ v3 在 ChatInput 外通过带标记的代码块保存 `cbHotkeysRequire`，新�
 `tencentcloud.codingcopilot.chat.startNewChat`，由 `// app-hook-studio:new-chat`
 标记管理，因此在代码编辑器等区域也能触发。终端沿用 IDE 对 `runCommands`
 的分发；显式启用 `terminal.integrated.sendKeybindingsToShell` 时仍可能交给 shell。
-仅快捷键配置发生变化时允许在线更新；修改 App JS 资源仍要求完全退出。
+更新任何配置前均须先 restore；不再允许直接覆盖已安装配置。
 
 ## Remote SSH 资源补丁
 
@@ -186,9 +214,36 @@ python3 remote_hotkeys.py restore --host root@example.com --port 36000
 提供聚焦接收器和聊天范围内双 Esc 停止。新建聊天和聚焦的 IDE 快捷键仍由本机 `hotkeys.py` 管理。
 
 备份位于远程对应的 `stable-<commit>/app-hook-studio-remote-backup/`，含 `host.before`、
-`webview.before` 和 `state.json`；重复安装保留首次备份。外部修改、损坏备份或未知构建会拒绝写入。
-两份文件分别原子替换，不保证跨文件事务；中断后可重试或恢复。仅写磁盘资源，安装与恢复后都需重新连接远程窗口
+`webview.before` 和 `state.json`；恢复后重新安装保留首次备份；未 restore 的重复 apply 会报错。外部修改、损坏备份或未知构建会拒绝写入。
+两份文件分别原子替换，不保证跨文件事务；中断后须先 restore 再重新安装。仅写磁盘资源，安装与恢复后都需重新连接远程窗口
 （必要时重新加载窗口或重启远程扩展宿主）；脚本不结束现有会话，也不自动重启服务。
 服务端更新到新 commit 后需要重新分析，备份不会自动迁移。
 
 远程默认 `python3` 必须为 3.9+；可用 `--python /absolute/path/to/python3` 指定已有解释器，不修改远程默认 Python。
+
+## 三个独立开关
+
+`config.example.json` 现在包含 `new_chat_enabled`、`stop_enabled`、`focus_enabled` 三个布尔值，默认均为 `true`。例如只保留停止和聚焦：
+
+```json
+{
+  "new_chat_enabled": false,
+  "new_chat": "ctrl+cmd+n",
+  "stop_enabled": true,
+  "stop": "esc,esc",
+  "focus_enabled": true,
+  "focus": "cmd+i"
+}
+```
+
+本机用 `python3 hotkeys.py apply --config config.example.json` 应用；远程用
+`python3 remote_hotkeys.py apply --host user@example.com --port 36000 --config config.example.json`。
+远程现在也接受同一格式，旧的运行设置格式仍兼容。本机的 `app`、`keybindings` 不用于定位远程资源。
+
+开关只接受 JSON `true` / `false`。关闭新建会移除工具拥有的全局绑定并禁用 Webview 新建触发；关闭停止会禁用停止监听的动作；关闭聚焦会移除工具拥有的绑定及宿主命令注入。共享 Webview 补丁可因其他功能仍然保留。不会修改用户自己创建的原生命令绑定。
+远程开关控制远程资源，本机 IDE 快捷键仍需在本机应用相同配置，否则关闭远程聚焦后本机绑定可能提示命令不存在。
+
+快捷键字符串保留，重新设为 `true` 可恢复使用；旧的 `"off"` 写法继续有效，启用时也需把 `off` 改回实际按键。
+本机命令行可用 `--no-new-chat-enabled`、`--no-stop-enabled`、`--no-focus-enabled` 关闭，
+或对应的 `--new-chat-enabled`、`--stop-enabled`、`--focus-enabled` 开启。
+本机修改资源前须先退出 App，应用后重开；远程应用后重新连接窗口。

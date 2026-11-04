@@ -63,7 +63,7 @@ def plan():
             candidate = (directory / (name + ".before")).read_bytes()
         else:
             profile = manifest[name]
-            block = runtime["focus-host-v2.js"] if name == "host" else h.render_webview(payload["config"], 3, runtime)
+            block = (runtime["focus-host-v2.js"] if payload.get("focusEnabled", True) else "") if name == "host" else h.render_webview(payload["config"], 3, runtime)
             if original.count(profile["anchor"]) != 1:
                 raise ValueError("Injection anchor is not unique")
             candidate = original.replace(profile["anchor"], block + profile["anchor"], 1)
@@ -81,9 +81,13 @@ def plan():
     return state, targets
 
 state, targets = plan()
+if payload["command"] == "apply":
+    h.require_original_installation(state, targets, directory)
 if payload["command"] in ("apply", "restore"):
     with h.lock(directory):
         state, targets = plan()
+        if payload["command"] == "apply":
+            h.require_original_installation(state, targets, directory)
         if state is None:
             state = {"schema": 1, "base": str(base), "targets": {}}
             for name, target in targets.items():
@@ -108,17 +112,32 @@ print(json.dumps({"ok": True, "command": payload["command"], "base": str(base), 
 '''
 
 
+def load_config(path):
+    value = json.loads(path.read_text()) if path else {}
+    if not isinstance(value, dict):
+        raise ValueError("配置必须为 JSON 对象。")
+    if "newChatEnabled" in value:
+        return h.settings(value), True
+    if set(value) - (set(h.DEFAULTS) | {"keybindings"}):
+        raise ValueError("配置文件字段无效。")
+    options = h.feature_options({**h.DEFAULTS, **value})
+    for feature in ("new_chat", "stop", "focus"):
+        if not isinstance(options[feature], str) or not options[feature].strip():
+            raise ValueError(feature + " 必须是快捷键字符串或 off。")
+    return h.chat_config(options), options["focus"].lower() != "off"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["preflight", "status", "apply", "restore"])
     parser.add_argument("--host", required=True, help="SSH destination, e.g. root@example.com")
     parser.add_argument("--port", type=int, default=22)
     parser.add_argument("--python", default="python3", help="Remote Python 3.9+ executable")
-    parser.add_argument("--config", type=Path, help="Chat runtime settings (newChatEnabled, stopMode, etc.)")
+    parser.add_argument("--config", type=Path, help="Shared config.example.json or legacy chat runtime settings")
     args = parser.parse_args()
     manifest, runtime = h.runtime_files()
-    config = h.settings(json.loads(args.config.read_text()) if args.config else {"newChatEnabled": True, "newChatShortcut": "ctrl+cmd+n", "stopMode": "double-escape", "stopShortcut": "cmd+alt+.", "doubleEscapeMs": 500, "scope": "panel"})
-    payload = {"command": args.command, "commit": COMMIT, "hostHash": HOST_SHA256, "manifest": manifest, "config": config, "library": base64.b64encode((h.ROOT / "hotkeys.py").read_bytes()).decode(), "runtime": {name: base64.b64encode(data.encode()).decode() for name, data in runtime.items()}}
+    config, focus_enabled = load_config(args.config)
+    payload = {"command": args.command, "commit": COMMIT, "hostHash": HOST_SHA256, "manifest": manifest, "config": config, "focusEnabled": focus_enabled, "library": base64.b64encode((h.ROOT / "hotkeys.py").read_bytes()).decode(), "runtime": {name: base64.b64encode(data.encode()).decode() for name, data in runtime.items()}}
     # Only constant Python code is in the shell command; all configuration uses stdin.
     bootstrap = "import base64;exec(base64.b64decode(" + repr(base64.b64encode(WORKER.encode()).decode()) + "))"
     import shlex

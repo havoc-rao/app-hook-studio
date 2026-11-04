@@ -19,7 +19,7 @@ MARKER = "// app-hook-studio:focus-input"
 NEW_CHAT_MARKER = "// app-hook-studio:new-chat"
 NEW_CHAT_COMMAND = "tencentcloud.codingcopilot.chat.startNewChat"
 BACKUP_RELATIVE = "Contents/Resources/codebuddy-hotkeys-quickstart-backup"
-DEFAULTS = {"app": "/Applications/CodeBuddy CN.app", "new_chat": "ctrl+cmd+n", "stop": "esc,esc", "focus": "cmd+i", "double_escape_ms": 500, "scope": "panel"}
+DEFAULTS = {"app": "/Applications/CodeBuddy CN.app", "new_chat": "ctrl+cmd+n", "new_chat_enabled": True, "stop": "esc,esc", "stop_enabled": True, "focus": "cmd+i", "focus_enabled": True, "double_escape_ms": 500, "scope": "panel"}
 CODES = {"esc": "Escape", "escape": "Escape", "enter": "Enter", "return": "Enter", "tab": "Tab", "space": "Space", "backspace": "Backspace", "delete": "Delete", ".": "Period", "period": "Period", ",": "Comma", "comma": "Comma", "/": "Slash", "slash": "Slash", ";": "Semicolon", "'": "Quote", "[": "BracketLeft", "]": "BracketRight", "\\": "Backslash", "-": "Minus", "=": "Equal", "`": "Backquote", "up": "ArrowUp", "down": "ArrowDown", "left": "ArrowLeft", "right": "ArrowRight"}
 ALIASES = {"ctrl": "ctrl", "control": "ctrl", "cmd": "meta", "command": "meta", "meta": "meta", "alt": "alt", "option": "alt", "opt": "alt", "shift": "shift"}
 
@@ -353,15 +353,34 @@ def check_state(state, targets, directory, app):
             raise ValueError(name + " 备份损坏或缺失，拒绝写入。")
 
 
+def feature_options(options):
+    """Resolve explicit switches without discarding the configured shortcut strings."""
+    result = dict(options)
+    for feature in ("new_chat", "stop", "focus"):
+        flag = feature + "_enabled"
+        value = options.get(flag, True)
+        if type(value) is not bool:
+            raise ValueError(flag + " 必须为 true 或 false。")
+        if not value:
+            result[feature] = "off"
+    return result
+
+
+def chat_config(options):
+    enabled = lambda value: isinstance(value, str) and value.lower() != "off"
+    sequence = options["stop"].lower().replace(" ", "") in ("esc,esc", "esc+esc", "escape,escape", "escape+escape")
+    return settings({"newChatEnabled": enabled(options["new_chat"]), "newChatShortcut": options["new_chat"] if enabled(options["new_chat"]) else DEFAULTS["new_chat"], "stopMode": "disabled" if not enabled(options["stop"]) else "double-escape" if sequence else "shortcut", "stopShortcut": options["stop"] if enabled(options["stop"]) and not sequence else "cmd+alt+.", "doubleEscapeMs": options["double_escape_ms"], "scope": options["scope"]})
+
+
 def plan(options, manifest, runtime, state, directory):
+    options = feature_options(options)
     app = Path(options["app"]).expanduser().resolve()
     version_check(app, manifest)
     enabled = lambda value: isinstance(value, str) and value.lower() != "off"
     for key in ("new_chat", "stop", "focus"):
         if not isinstance(options[key], str) or not options[key].strip():
             raise ValueError(key + " 必须是快捷键字符串或 off。")
-    sequence = options["stop"].lower().replace(" ", "") in ("esc,esc", "esc+esc", "escape,escape", "escape+escape")
-    config = settings({"newChatEnabled": enabled(options["new_chat"]), "newChatShortcut": options["new_chat"] if enabled(options["new_chat"]) else DEFAULTS["new_chat"], "stopMode": "disabled" if not enabled(options["stop"]) else "double-escape" if sequence else "shortcut", "stopShortcut": options["stop"] if enabled(options["stop"]) and not sequence else "cmd+alt+.", "doubleEscapeMs": options["double_escape_ms"], "scope": options["scope"]})
+    config = chat_config(options)
     focus = ide_key(options["focus"]) if enabled(options["focus"]) else None
     if focus and any(shortcut(focus) == key for key in [shortcut(config["newChatShortcut"]) if config["newChatEnabled"] else None, shortcut(config["stopShortcut"]) if config["stopMode"] == "shortcut" else None]):
         raise ValueError("聚焦快捷键与新建或停止冲突。")
@@ -374,7 +393,7 @@ def plan(options, manifest, runtime, state, directory):
             raise ValueError("资源真实路径位于 App 包外，拒绝写入。")
         data = path.read_bytes()
         original, current_kind = recover(data, kind, manifest, runtime)
-        block = render_webview(config, 3, runtime) if kind == "webview" else runtime["focus-host-v2.js"]
+        block = render_webview(config, 3, runtime) if kind == "webview" else runtime["focus-host-v2.js"] if focus else ""
         if original.count(profile["anchor"]) != 1:
             raise ValueError("注入锚点不唯一。")
         candidate_source = original.replace(profile["anchor"], block + profile["anchor"], 1)
@@ -413,14 +432,30 @@ def commit(path, expected, data):
         raise ValueError("写后校验失败：" + str(path))
 
 
+def require_original_installation(state, targets, directory):
+    if state:
+        if state.get("phase") != "restored":
+            raise ValueError("发现尚未恢复的安装/backup 记录；请先执行 restore，再 apply 更新配置。")
+        for name, target in targets.items():
+            if digest(target["current"]) != state["targets"][name]["beforeHash"]:
+                raise ValueError("当前文件不是 restore 后的备份原文；请先执行 restore。")
+    elif any(directory.glob("*.before")):
+        raise ValueError("发现 backup 但缺少安装记录；请先检查并恢复，拒绝 apply。")
+    if any(targets[name]["kind"] != "original" for name in ("webview", "host")):
+        raise ValueError("App 仍有补丁；请先用原安装工具 restore，恢复已验证原文后再 apply。")
+
+
 def apply(options, manifest, runtime, directory):
     # Validate before creating an in-App backup directory; then recheck under the lock.
-    app, _, initial_targets = plan(options, manifest, runtime, read_state(directory), directory)
+    initial_state = read_state(directory)
+    app, _, initial_targets = plan(options, manifest, runtime, initial_state, directory)
+    require_original_installation(initial_state, initial_targets, directory)
     if any(initial_targets[name]["candidate"] != initial_targets[name]["current"] for name in ("webview", "host")):
         require_closed(app)
     with lock(directory):
         state = read_state(directory)
         app, _, targets = plan(options, manifest, runtime, state, directory)
+        require_original_installation(state, targets, directory)
         if any(targets[name]["candidate"] != targets[name]["current"] for name in ("webview", "host")):
             require_closed(app)
         if not state:
@@ -446,7 +481,7 @@ def apply(options, manifest, runtime, directory):
                     commit(target["path"], digest(target["current"]), target["candidate"])
                 completed.append(name)
         except Exception as error:
-            raise RuntimeError(str(error) + "；已完成：" + ", ".join(completed) + "。备份保留，可重试或 restore。") from error
+            raise RuntimeError(str(error) + "；已完成：" + ", ".join(completed) + "。备份保留，请先 restore 后再 apply。") from error
         state["phase"] = "applied"
         atomic_write(directory / "state.json", (encoded(state) + "\n").encode())
         return {"ok": True, "changed": any(item["current"] != item["candidate"] for item in targets.values()), "message": "三个能力已统一安装。重新打开 CodeBuddy 后使用；配置变化也需要重开。", "backupDirectory": str(directory)}
@@ -495,6 +530,8 @@ def main():
     parser.add_argument("--focus")
     parser.add_argument("--double-escape-ms", dest="double_escape_ms", type=int)
     parser.add_argument("--scope", choices=["panel", "input"])
+    for feature in ("new_chat", "stop", "focus"):
+        parser.add_argument("--" + feature.replace("_", "-") + "-enabled", dest=feature + "_enabled", action=argparse.BooleanOptionalAction, default=None)
     args = parser.parse_args()
     try:
         manifest, runtime = runtime_files()

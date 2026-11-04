@@ -14,8 +14,9 @@ python3 hotkeys.py restore
 ```
 
 - 默认 App 为 `/Applications/CodeBuddy CN.app`；可用 `--app`、`--keybindings`、`--data-dir` 指定目标。恢复时使用相同目标和备份目录。
-- 修改 App JS 前须保存工作、⌘Q 完全退出；仅 IDE 快捷键变化允许在线更新。App JS 改动需重开生效。
+- 修改 App JS 前须保存工作、⌘Q 完全退出；任何已安装配置的更新都必须先 restore，再 apply；apply 拒绝尚未恢复的 backup/安装记录和残留补丁。App JS 改动需重开生效。
 - 默认：`ctrl+cmd+n` 全局新建、`cmd+i` 聚焦、聊天区域内 500ms 双 Esc 停止。用 `--new-chat`、`--focus`、`--stop` 改键，`off` 关闭对应能力。
+- 配置的 `new_chat_enabled`、`stop_enabled`、`focus_enabled` 为独立布尔开关，默认全开；关闭保留按键配置。远程和本机需分别应用配置。旧 `off` 写法仍兼容。
 - 新建通过无 `when` 的 IDE `runCommands` 调用原生命令；停止仍是聊天范围内的 Webview 监听，不是全局快捷键。
 
 远程工具在本机发起，SSH 目标、端口、解释器均可切换：
@@ -31,16 +32,16 @@ python3 remote_hotkeys.py restore --host user@example.com --port 36000
 
 - SSH 使用 `BatchMode=yes`，需已有可用认证；不安装 Python，不修改默认解释器。
 - 远程资源在登录用户的 `~/.codebuddy-server-cn/bin/stable-<commit>/`。远程脚本不管理本机快捷键；本机仍需安装对应绑定。
-- 远程 `--config` 接收运行设置（`newChatEnabled`、`stopMode` 等），与本机 `--config` 的选项格式不同。自定义远程设置时后续检查、重装也传同一配置。
+- 远程 `--config` 接受与本机相同的 `config.example.json` 格式，也兼容旧运行设置（`newChatEnabled`、`stopMode` 等）。自定义远程设置时后续检查、重装也传同一配置。
 - 安装/恢复只写磁盘，不结束现有会话。之后重新连接远程窗口；仍加载旧命令时重启远程扩展宿主或重新加载窗口。
 
 ## 备份与恢复
 
 - 本机默认备份：App 内 `Contents/Resources/codebuddy-hotkeys-quickstart-backup/`。
 - 远程备份：对应 `stable-<commit>/app-hook-studio-remote-backup/`。
-- 首次现场存为 `*.before`，`state.json` 记录路径、原始摘要、可接受摘要和阶段；重复安装保留首次基线。
+- 首次现场存为 `*.before`，`state.json` 记录路径、原始摘要、可接受摘要和阶段；恢复后重新安装保留首次基线；restored 备份可复用，但当前文件必须匹配备份且 JS 为已验证原文。
 - 本机 `restore` 整文件恢复快捷键，后加的用户改动会触发拒绝覆盖。先比对、保留用户修改，再做有针对性的恢复；不要删状态、改摘要来强行通过。
-- 各目标分别原子替换，不是跨文件事务。失败保留现场与备份，核对已完成项再重试或恢复。
+- 各目标分别原子替换，不是跨文件事务。失败保留现场与备份，核对已完成项，先 restore 再 apply。
 - App/服务端更新可能清除包内备份；更新前恢复或另存备份。恢复后保留备份目录。
 
 ## 遇到版本、摘要或远程差异

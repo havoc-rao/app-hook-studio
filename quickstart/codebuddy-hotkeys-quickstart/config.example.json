@@ -1,7 +1,10 @@
 {
   "app": "/Applications/CodeBuddy CN.app",
+  "new_chat_enabled": true,
   "new_chat": "ctrl+cmd+n",
+  "stop_enabled": true,
   "stop": "esc,esc",
+  "focus_enabled": true,
   "focus": "cmd+i",
   "double_escape_ms": 500,
   "scope": "panel"

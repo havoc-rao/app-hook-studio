@@ -14,6 +14,19 @@ import hotkeys as h
 import remote_hotkeys as remote
 
 
+class RemoteConfigTests(unittest.TestCase):
+    def test_shared_config_and_legacy_runtime_settings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'config.json'
+            path.write_text(json.dumps({**h.DEFAULTS, 'new_chat_enabled': False, 'stop_enabled': False, 'focus_enabled': False}))
+            config, focus = remote.load_config(path)
+            self.assertFalse(config['newChatEnabled'])
+            self.assertEqual(config['stopMode'], 'disabled')
+            self.assertFalse(focus)
+            path.write_text(json.dumps(config))
+            self.assertEqual(remote.load_config(path), (config, True))
+
+
 @unittest.skipUnless(os.environ.get('CODEBUDDY_TEST_REMOTE_HOST') and os.environ.get('CODEBUDDY_TEST_ORIGINAL') and shutil.which('node'), 'Set remote host and original Webview paths; Node required')
 class RemoteTests(unittest.TestCase):
     def setUp(self):
@@ -54,8 +67,9 @@ class RemoteTests(unittest.TestCase):
         self.assertFalse(backup.exists())
         self.assertEqual(self.run_worker('apply')['phase'], 'applied')
         installed = [self.host.read_bytes(), self.webview.read_bytes()]
-        result = self.run_worker('apply')
-        self.assertTrue(all(not target['changed'] for target in result['targets'].values()))
+        result = self.run_worker('apply', ok=False)
+        self.assertIn('restore', result.stderr)
+        self.assertEqual([self.host.read_bytes(), self.webview.read_bytes()], installed)
         self.host.write_bytes(installed[0] + b'// external change\n')
         self.run_worker('restore', ok=False)
         self.assertEqual(self.webview.read_bytes(), installed[1])
@@ -66,6 +80,20 @@ class RemoteTests(unittest.TestCase):
         self.assertEqual((backup / 'host.before').read_bytes(), before[0])
         (backup / 'webview.before').write_bytes(b'damaged')
         self.run_worker('apply', ok=False)
+
+    def test_focus_switch_omits_remote_command_registration(self):
+        before = self.host.read_bytes()
+        self.payload['focusEnabled'] = False
+        self.run_worker('apply')
+        self.assertEqual(self.host.read_bytes(), before)
+        self.run_worker('restore')
+        self.payload['focusEnabled'] = True
+        self.run_worker('apply')
+        self.assertIn(b'app-hook-studio.codebuddy.focusInput', self.host.read_bytes())
+        self.run_worker('restore')
+        self.payload['focusEnabled'] = False
+        self.run_worker('apply')
+        self.assertEqual(self.host.read_bytes(), before)
 
     def test_unknown_commit_refused_before_backup_creation(self):
         (self.base / 'product.json').write_text('{"commit":"unknown"}')

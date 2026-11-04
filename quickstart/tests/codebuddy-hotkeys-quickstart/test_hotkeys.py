@@ -87,6 +87,16 @@ setImmediate(()=>{assert.equal(consumed,true);assert.equal(created,1)});
         result = subprocess.run(['node', '-e', program], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_explicit_switches_validate_booleans_and_keep_legacy_off(self):
+        for feature in ("new_chat", "stop", "focus"):
+            options = {**h.DEFAULTS, feature + "_enabled": False}
+            self.assertEqual(h.feature_options(options)[feature], "off")
+            self.assertEqual(options[feature], h.DEFAULTS[feature])
+            for invalid in ("false", 0, None):
+                with self.assertRaises(ValueError):
+                    h.feature_options({**h.DEFAULTS, feature + "_enabled": invalid})
+        self.assertEqual(h.feature_options({**h.DEFAULTS, "new_chat": "off"})["new_chat"], "off")
+
     def test_running_app_blocks_mutation(self):
         result = subprocess.CompletedProcess([], 0, '/Applications/CodeBuddy CN.app/Contents/MacOS/Electron\n', '')
         with patch.object(h.subprocess, 'run', return_value=result), self.assertRaises(ValueError):
@@ -122,7 +132,9 @@ class RealSourceTests(unittest.TestCase):
         self.assertFalse(self.directory.exists())
         self.assertTrue(all(item['current'] != item['candidate'] for item in targets.values()))
         self.assertTrue(h.apply(self.options, self.manifest, self.runtime, self.directory)['changed'])
-        self.assertFalse(h.apply(self.options, self.manifest, self.runtime, self.directory)['changed'])
+        with self.assertRaisesRegex(ValueError, 'restore'):
+            h.apply(self.options, self.manifest, self.runtime, self.directory)
+        h.restore(self.options, self.manifest, self.directory)
         changed = {**self.options, 'new_chat': 'ctrl+alt+f5', 'stop': 'cmd+alt+.', 'focus': 'cmd+shift+i', 'scope': 'input'}
         h.apply(changed, self.manifest, self.runtime, self.directory)
         state = h.read_state(self.directory)
@@ -132,18 +144,56 @@ class RealSourceTests(unittest.TestCase):
         self.assertEqual([p.read_bytes() for p in (self.webview, self.host, self.keybindings)], before)
         h.restore(changed, self.manifest, self.directory)
 
-    def test_global_new_chat_binding_has_no_when_and_can_update_while_app_runs(self):
+    def test_global_new_chat_binding_requires_restore_before_configuration_update(self):
         h.apply(self.options, self.manifest, self.runtime, self.directory)
         rules = h.jsonc_document(self.keybindings.read_text())[0]
         expected = {"key": "ctrl+cmd+n", "command": "runCommands", "args": {"commands": [h.NEW_CHAT_COMMAND]}}
         self.assertIn(expected, rules)
         self.assertIn(RULE, rules)
         changed = {**self.options, "focus": "ctrl+cmd+j"}
-        with patch.object(h, 'require_closed', side_effect=AssertionError('resource write attempted')):
+        before = self.keybindings.read_bytes()
+        with self.assertRaisesRegex(ValueError, 'restore'):
             h.apply(changed, self.manifest, self.runtime, self.directory)
+        self.assertEqual(self.keybindings.read_bytes(), before)
+        h.restore(self.options, self.manifest, self.directory)
+        h.apply(changed, self.manifest, self.runtime, self.directory)
         source = h.edit_binding(self.keybindings.read_text(), None, h.NEW_CHAT_COMMAND, h.NEW_CHAT_MARKER)
         self.assertNotIn(expected, h.jsonc_document(source)[0])
         self.assertIn({**RULE, "key": "ctrl+cmd+j"}, h.jsonc_document(source)[0])
+
+    def test_independent_switches_control_runtime_host_and_owned_bindings(self):
+        import itertools
+        for new, stop, focus in itertools.product((False, True), repeat=3):
+            options = {**self.options, "new_chat_enabled": new, "stop_enabled": stop, "focus_enabled": focus}
+            _, config, targets = h.plan(options, self.manifest, self.runtime, None, self.directory)
+            self.assertEqual(config["newChatEnabled"], new)
+            self.assertEqual(config["stopMode"], "double-escape" if stop else "disabled")
+            self.assertEqual(targets["host"]["candidate"] != targets["host"]["current"], focus)
+            source = targets["keybindings"]["candidate"].decode()
+            self.assertEqual(h.NEW_CHAT_MARKER in source, new)
+            self.assertEqual(h.MARKER in source, focus)
+        h.apply(self.options, self.manifest, self.runtime, self.directory)
+        disabled = {**self.options, "new_chat_enabled": False, "stop_enabled": False, "focus_enabled": False}
+        h.restore(self.options, self.manifest, self.directory)
+        h.apply(disabled, self.manifest, self.runtime, self.directory)
+        self.assertEqual(h.jsonc_document(self.keybindings.read_text())[0], [{"key": "cmd+k", "command": "user.keep"}])
+        self.assertEqual(h.read_state(self.directory)["config"]["new_chat"], h.DEFAULTS["new_chat"])
+        h.restore(disabled, self.manifest, self.directory)
+        h.apply(self.options, self.manifest, self.runtime, self.directory)
+        self.assertIn(h.NEW_CHAT_MARKER, self.keybindings.read_text())
+
+    def test_orphan_backup_and_residual_patch_refuse_apply_without_writes(self):
+        self.directory.mkdir()
+        (self.directory / 'host.before').write_bytes(self.host.read_bytes())
+        with self.assertRaisesRegex(ValueError, 'backup'):
+            h.apply(self.options, self.manifest, self.runtime, self.directory)
+        self.assertFalse((self.directory / 'state.json').exists())
+        (self.directory / 'host.before').unlink()
+        _, _, targets = h.plan(self.options, self.manifest, self.runtime, None, self.directory)
+        self.webview.write_bytes(targets['webview']['candidate'])
+        with self.assertRaisesRegex(ValueError, 'restore'):
+            h.apply(self.options, self.manifest, self.runtime, self.directory)
+        self.assertFalse((self.directory / 'state.json').exists())
 
     def test_unknown_target_backup_damage_and_later_user_edits_are_preserved(self):
         self.host.write_bytes(b'unknown')
@@ -181,6 +231,7 @@ class RealSourceTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)['backupDirectory'], str(directory))
         for name, data in zip(('webview', 'host', 'keybindings'), before):
             self.assertEqual((directory / (name + '.before')).read_bytes(), data)
+        h.restore(self.options, self.manifest, directory)
         h.apply({**self.options, 'focus': 'cmd+shift+i'}, self.manifest, self.runtime, directory)
         self.assertEqual((directory / 'keybindings.before').read_bytes(), before[2])
         subprocess.run([sys.executable, str(ROOT / 'hotkeys.py'), 'restore', '--app', str(self.app)], capture_output=True, text=True, check=True)
