@@ -5,7 +5,8 @@
   "webview": {
     "path": "Contents/Resources/app/extensions/genie/out/webviews/main.942dbf9a.chunk.js",
     "sha256": "ee829469ee2b4edd4c04f09f8b828840f196c82e22f5973d909ce6f29445c31f",
-    "anchor": "const{setNavigationAllowed:Tn,navigateToInputContextLast:In}="
+    "anchor": "const{setNavigationAllowed:Tn,navigateToInputContextLast:In}=",
+    "requireAnchor": "n.ChatInput=(0,m.memo)((0,m.forwardRef)(function ChatInput(e1,n){"
   },
   "host": {
     "id": "codebuddy-cn-focus-host-genie-3-10-0",
@@ -23,7 +24,9 @@
     "webview-v1.js.template": "e22473537a469900b32539913b64738226b91e5a34784a03ae14555e87e7b8fb",
     "focus-host-v1.js": "7b3087415e575d4687e408673e51d5f0850e64e8a72203dd5f2ed7cef792b667",
     "webview-v2.js.template": "0dd760b4dc54c392cd573e0dbb85af0ff5caaaaaf45c50572e512ca7cc5ab457",
-    "focus-host-v2.js": "de51d3f7c7f498af68d99b1c7675933fc38c57f78c029e38f1cb4aaafb1a598c"
+    "focus-host-v2.js": "de51d3f7c7f498af68d99b1c7675933fc38c57f78c029e38f1cb4aaafb1a598c",
+    "webview-v3.js.template": "0a8dc6675321d5d38ab7ec183d11040b61052c4006875c9af5d358318d29b1ad",
+    "webview-require-v3.js": "29a6ab6f67710437c9880e3d3cdbc93f3715f6d75f6cf1acc4b5d34b4972a4e7"
   },
   "referenceVectors": [
     {
@@ -37,7 +40,8 @@
       },
       "versions": {
         "1": "4054159a11345ed4e95ea21afa1bb199d84585b5d5975f149e5bab5f98d3b3a6",
-        "2": "6e1cd6263b50a49141838ea24899a428ea0a07e325efa845e5c8bd748571b303"
+        "2": "6e1cd6263b50a49141838ea24899a428ea0a07e325efa845e5c8bd748571b303",
+        "3": "a6d3a85901ce4b5a901f5c3bfd62cec6320657e9888de3948af247c7a2279b3a"
       }
     },
     {
@@ -51,7 +55,8 @@
       },
       "versions": {
         "1": "1dfedefd3e89d4ddb9858f217c18c06b26ee07c531dc27c622f0bd11e5e5afb1",
-        "2": "bec440bc484ca8067e6662a8858c2d555b03f63f580848cded1a5ca785a53001"
+        "2": "bec440bc484ca8067e6662a8858c2d555b03f63f580848cded1a5ca785a53001",
+        "3": "b31f1e85d9f1145377d3134aae8386652134de0d8c2ff3dc02de514a085b37f1"
       }
     },
     {
@@ -65,7 +70,8 @@
       },
       "versions": {
         "1": "501ffe87190ae79310940c4bd9132fb657964b3e64d40fcf38c6c744729b6629",
-        "2": "cd7860a9b853db0abbede7ebd9365f6f512bc18460ec866ff157dbc88182a46a"
+        "2": "cd7860a9b853db0abbede7ebd9365f6f512bc18460ec866ff157dbc88182a46a",
+        "3": "d5de359fc54a190ef98b7929fbae50eddc2671b74115c79b37bab79b18ad71c1"
       }
     }
   ]

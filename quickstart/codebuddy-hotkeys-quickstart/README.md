@@ -154,3 +154,16 @@ python3 hotkeys.py restore
 开发测试已移出体验包，不参与脚本运行，也不放进 ZIP。快照与原实现的六组配置/版本渲染摘要已逐字核对；开发验证覆盖临时 App 副本的安装、改键、恢复和无 Node 环境的便携运行。
 
 三个能力复用已获用户运行反馈的实现，不代表所有 App 版本和终端设置均已验收。
+
+## 新建聊天修正（Webview v3）
+
+当前构建的 ChatInput 函数声明了局部 `var r`，会遮蔽模块的 Webpack require。
+v3 在 ChatInput 外通过带标记的代码块保存 `cbHotkeysRequire`，新建聊天使用该引用。
+安装器精确校验两处注入与原文摘要，识别 v1/v2/v3；恢复仍使用首次备份。
+此修复适用于独立 Python 快速体验包；Raycast 的 TS renderer 尚未同步。
+
+新建聊天同时注册无 `when` 条件的 IDE `runCommands` 快捷键，调用原生
+`tencentcloud.codingcopilot.chat.startNewChat`，由 `// app-hook-studio:new-chat`
+标记管理，因此在代码编辑器等区域也能触发。终端沿用 IDE 对 `runCommands`
+的分发；显式启用 `terminal.integrated.sendKeybindingsToShell` 时仍可能交给 shell。
+仅快捷键配置发生变化时允许在线更新；修改 App JS 资源仍要求完全退出。

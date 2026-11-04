@@ -16,6 +16,8 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parent
 MARKER = "// app-hook-studio:focus-input"
+NEW_CHAT_MARKER = "// app-hook-studio:new-chat"
+NEW_CHAT_COMMAND = "tencentcloud.codingcopilot.chat.startNewChat"
 BACKUP_RELATIVE = "Contents/Resources/codebuddy-hotkeys-quickstart-backup"
 DEFAULTS = {"app": "/Applications/CodeBuddy CN.app", "new_chat": "ctrl+cmd+n", "stop": "esc,esc", "focus": "cmd+i", "double_escape_ms": 500, "scope": "panel"}
 CODES = {"esc": "Escape", "escape": "Escape", "enter": "Enter", "return": "Enter", "tab": "Tab", "space": "Space", "backspace": "Backspace", "delete": "Delete", ".": "Period", "period": "Period", ",": "Comma", "comma": "Comma", "/": "Slash", "slash": "Slash", ";": "Semicolon", "'": "Quote", "[": "BracketLeft", "]": "BracketRight", "\\": "Backslash", "-": "Minus", "=": "Equal", "`": "Backquote", "up": "ArrowUp", "down": "ArrowDown", "left": "ArrowLeft", "right": "ArrowRight"}
@@ -124,12 +126,13 @@ def recover(data, kind, manifest, runtime):
     if digest(data) == expected:
         return data.decode("utf-8"), "original"
     source = data.decode("utf-8")
+    header = None
     if kind == "webview" and digest(data) == manifest["legacy"]["sha256"]:
         start = source.index(manifest["legacy"]["start"])
         end = source.index(manifest["legacy"]["end"], start) + len(manifest["legacy"]["end"])
         block = source[start:end]
     elif kind == "webview":
-        header = re.search(r"/\* APP_HOOK_STUDIO_BEGIN v([12]) codebuddy-cn ([A-Za-z0-9+/=]+) \*/\n", source)
+        header = re.search(r"/\* APP_HOOK_STUDIO_BEGIN v([123]) codebuddy-cn ([A-Za-z0-9+/=]+) \*/\n", source)
         if not header:
             raise ValueError("聊天资源不是已验证的原文或已知补丁。")
         start = header.start()
@@ -143,7 +146,13 @@ def recover(data, kind, manifest, runtime):
         start, block = hits[0]
         end = start + len(block)
     original = source[:start] + source[end:]
-    if source[start:end] != block or digest(original.encode()) != expected or original.find(profile["anchor"]) != start or original.count(profile["anchor"]) != 1:
+    if kind == "webview" and header and header[1] == "3":
+        alias = runtime["webview-require-v3.js"]
+        anchor = manifest["webview"]["requireAnchor"]
+        if original.count(alias + anchor) != 1:
+            raise ValueError("模块 require 别名或位置不匹配。")
+        original = original.replace(alias + anchor, anchor, 1)
+    if source[start:end] != block or digest(original.encode()) != expected or original.find(profile["anchor"]) != start - (len(runtime["webview-require-v3.js"]) if kind == "webview" and header and header[1] == "3" else 0) or original.count(profile["anchor"]) != 1:
         raise ValueError("补丁内容、原文摘要或插入位置不匹配，保留现场。")
     return original, "managed"
 
@@ -222,18 +231,18 @@ def jsonc_document(source):
     return values, spans, comments, lexical
 
 
-def edit_binding(source, rule, command):
+def edit_binding(source, rule, command, marker=MARKER):
     values, spans, comments, lexical = jsonc_document(source)
-    markers = [(start, end) for start, end in comments if source[start:end].strip() == MARKER]
+    markers = [(start, end) for start, end in comments if source[start:end].strip() == marker]
     if len(markers) > 1:
-        raise ValueError("聚焦快捷键存在多个所有权标记。")
+        raise ValueError("快捷键存在多个所有权标记。")
     if markers:
         begin, marker_end = markers[0]
         index = next((i for i, (start, _) in enumerate(spans) if start >= marker_end), None)
         if index is None or source[marker_end:spans[index][0]].strip():
-            raise ValueError("聚焦快捷键所有权标记位置异常。")
+            raise ValueError("快捷键所有权标记位置异常。")
         item = values[index]
-        known = isinstance(item, dict) and (item.get("command") == "coding-copilot.webviews.chat.focus" and "args" not in item or item.get("command") == "runCommands" and item.get("args") == {"commands": [command]})
+        known = isinstance(item, dict) and (marker == MARKER and item.get("command") == "coding-copilot.webviews.chat.focus" and "args" not in item or item.get("command") == "runCommands" and item.get("args") == {"commands": [command]})
         if not known or "when" in item:
             raise ValueError("拥有标记的规则被改写，拒绝覆盖。")
         start, end = spans[index]
@@ -258,11 +267,11 @@ def edit_binding(source, rule, command):
                 result = result[:first] + result[last:]
     elif rule is None:
         if any(isinstance(item, dict) and item.get("command") == "runCommands" and item.get("args") == {"commands": [command]} for item in values):
-            raise ValueError("用户自建聚焦规则仍存在，不能自动禁用；请手动检查。")
+            raise ValueError("用户自建快捷键规则仍存在，不能自动禁用；请手动检查。")
         result = source
     else:
         close = lexical.rfind("]")
-        edits = [(close, "\n    " + MARKER + "\n    " + json.dumps(rule, ensure_ascii=False, indent=4).replace("\n", "\n    ") + "\n")]
+        edits = [(close, "\n    " + marker + "\n    " + json.dumps(rule, ensure_ascii=False, indent=4).replace("\n", "\n    ") + "\n")]
         if values and "," not in lexical[spans[-1][1]:close]:
             edits.append((spans[-1][1], ","))
         result = source
@@ -365,16 +374,27 @@ def plan(options, manifest, runtime, state, directory):
             raise ValueError("资源真实路径位于 App 包外，拒绝写入。")
         data = path.read_bytes()
         original, current_kind = recover(data, kind, manifest, runtime)
-        block = render_webview(config, 2, runtime) if kind == "webview" else runtime["focus-host-v2.js"]
+        block = render_webview(config, 3, runtime) if kind == "webview" else runtime["focus-host-v2.js"]
         if original.count(profile["anchor"]) != 1:
             raise ValueError("注入锚点不唯一。")
-        candidate = original.replace(profile["anchor"], block + profile["anchor"], 1).encode()
+        candidate_source = original.replace(profile["anchor"], block + profile["anchor"], 1)
+        if kind == "webview":
+            anchor = profile["requireAnchor"]
+            if original.count(anchor) != 1:
+                raise ValueError("模块 require 锚点不唯一。")
+            candidate_source = candidate_source.replace(anchor, runtime["webview-require-v3.js"] + anchor, 1)
+        candidate = candidate_source.encode()
         recover(candidate, kind, manifest, runtime)
         targets[kind] = {"path": path, "current": data, "candidate": candidate, "kind": current_kind}
     path = Path(options["keybindings"]).expanduser().resolve()
     current = optional_read(path)
     rule = {"key": focus, "command": "runCommands", "args": {"commands": [manifest["focusCommand"]]}} if focus else None
-    candidate = None if current is None and rule is None else edit_binding(current.decode("utf-8") if current is not None else "[]\n", rule, manifest["focusCommand"]).encode()
+    new_rule = {"key": ide_key(config["newChatShortcut"]), "command": "runCommands", "args": {"commands": [NEW_CHAT_COMMAND]}} if config["newChatEnabled"] else None
+    candidate = None
+    if current is not None or rule is not None or new_rule is not None:
+        source = current.decode("utf-8") if current is not None else "[]\n"
+        source = edit_binding(source, rule, manifest["focusCommand"])
+        candidate = edit_binding(source, new_rule, NEW_CHAT_COMMAND, NEW_CHAT_MARKER).encode()
     targets["keybindings"] = {"path": path, "current": current, "candidate": candidate, "kind": "user-config"}
     check_state(state, targets, directory, app)
     return app, config, targets
@@ -395,12 +415,13 @@ def commit(path, expected, data):
 
 def apply(options, manifest, runtime, directory):
     # Validate before creating an in-App backup directory; then recheck under the lock.
-    plan(options, manifest, runtime, read_state(directory), directory)
-    require_closed(Path(options["app"]).expanduser().resolve())
+    app, _, initial_targets = plan(options, manifest, runtime, read_state(directory), directory)
+    if any(initial_targets[name]["candidate"] != initial_targets[name]["current"] for name in ("webview", "host")):
+        require_closed(app)
     with lock(directory):
         state = read_state(directory)
         app, _, targets = plan(options, manifest, runtime, state, directory)
-        if any(item["candidate"] != item["current"] for item in targets.values()):
+        if any(targets[name]["candidate"] != targets[name]["current"] for name in ("webview", "host")):
             require_closed(app)
         if not state:
             state = {"schema": 1, "app": str(app), "targets": {}}
