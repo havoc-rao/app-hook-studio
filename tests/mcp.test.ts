@@ -41,6 +41,10 @@ test("real stdio MCP client discovers tools, validates/registers executable Apps
     const value = JSON.parse((response.content as { text: string }[])[0].text);
     return { response, value };
   };
+  const built = (await call("get_app", { appId: "codebuddy-cn" })).value;
+  assert.ok(built.features.some((f: { id: string }) => f.id === "approval-notification"));
+  const builtList = (await call("list_apps")).value.apps.find((a: { id: string }) => a.id === "codebuddy-cn");
+  assert.ok(builtList.items.some((f: { id: string }) => f.id === "approval-notification"));
   const schema = (await call("get_recipe_schema")).value.schema;
   assert.equal(schema.$schema, "http://json-schema.org/draft-07/schema#");
   assert.equal(schema.properties.schemaVersion.const, 2);

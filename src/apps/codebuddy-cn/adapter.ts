@@ -6,12 +6,13 @@ import { AppAdapter } from "../../core/contracts";
 import { DEFAULT_SETTINGS, validateSettings } from "./settings";
 import { analyzeBundle, patchBundle } from "./hook";
 import { PROFILE } from "./profile";
+import { focusHostAdapter } from "./focus-host";
 import { FOCUS_FEATURE } from "./focus-keybinding";
 
 export const codebuddyAdapter: AppAdapter = {
   id: "codebuddy-cn",
   title: "CodeBuddy CN",
-  description: "新建对话、停止聊天、聚焦输入框",
+  description: "新建对话、停止聊天、聚焦输入框、工具批准通知",
   supportDescription: "支持已验证的 CodeBuddy 1.106.1 / genie 3.10.0 构建，同时校验原始资源摘要。",
   defaultAppPath: "/Applications/CodeBuddy CN.app",
   versions: {
@@ -89,6 +90,16 @@ export const codebuddyAdapter: AppAdapter = {
             : "已关闭",
     },
     FOCUS_FEATURE,
+    {
+      id: "approval-notification",
+      title: "工具批准通知",
+      description: "等待用户批准时执行 CodeBuddy 的 Notification / permission_prompt hooks",
+      symbol: "notification",
+      kind: "resource",
+      fieldIds: [],
+      resourceTarget: { adapter: focusHostAdapter, dataSubdirectory: "focus-keybinding/bridge" },
+      summarize: () => "按 CodeBuddy Notification hooks 配置执行",
+    },
   ],
   validateSettings,
   summarize(value) {

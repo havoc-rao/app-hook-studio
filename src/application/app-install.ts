@@ -83,7 +83,47 @@ export function appInstallRequirements(adapter: AppAdapter) {
   };
 }
 
-/** One app, one resource patch, and all configured host shortcuts. Preparation never writes. */
+/** A shared companion is installed/restored once, even when several features use it. */
+function companions(adapter: AppAdapter, directory: string) {
+  const items = new Map<string, { id: string; title: string; engine: PatchEngine; adapter: AppAdapter }>();
+  for (const feature of adapter.features) {
+    const bridge =
+      feature.kind === "ide-keybinding" ? feature.resourceBridge : feature.resourceTarget?.adapter;
+    if (!bridge) continue;
+    const data =
+      feature.kind === "ide-keybinding"
+        ? path.join(directory, feature.dataSubdirectory, "bridge")
+        : path.join(directory, feature.resourceTarget!.dataSubdirectory);
+    const previous = items.get(bridge.id);
+    if (previous) {
+      if (previous.engine.dataDirectory !== data || previous.adapter !== bridge)
+        throw new Error(`共享资源 ${bridge.id} 的适配器或配置目录不一致。`);
+      continue;
+    }
+    items.set(bridge.id, {
+      id: `bridge:${feature.id}`,
+      title: bridge.title,
+      adapter: bridge,
+      engine: new PatchEngine(bridge, data),
+    });
+  }
+  return [...items.values()];
+}
+
+export function featureResourceEngine(
+  adapter: AppAdapter,
+  feature: Extract<AppFeature, { kind: "resource" }>,
+  directory = appDataDirectory(adapter.id),
+) {
+  return feature.resourceTarget
+    ? new PatchEngine(
+        feature.resourceTarget.adapter,
+        path.join(directory, feature.resourceTarget.dataSubdirectory),
+      )
+    : new PatchEngine(adapter, directory);
+}
+
+/** One app, deduplicated resource patches, and all configured host shortcuts. Preparation never writes. */
 export async function prepareAppInstall(
   adapter: AppAdapter,
   directory = appDataDirectory(adapter.id),
@@ -91,7 +131,9 @@ export async function prepareAppInstall(
 ): Promise<AppInstallPlan> {
   const config = validateAppConfig(adapter, supplied ?? (await loadConfig(adapter, directory)));
   const engine = new PatchEngine(adapter, directory);
-  const resources = adapter.features.filter((feature) => feature.kind === "resource");
+  const resources = adapter.features.filter(
+    (feature) => feature.kind === "resource" && !feature.resourceTarget,
+  );
   const native = await Promise.all(
     adapter.features
       .filter((feature): feature is NativeFeature => feature.kind === "ide-keybinding")
@@ -107,17 +149,10 @@ export async function prepareAppInstall(
     await adapter.identify(config.appPath);
   const tasks = [
     ...(resources.length ? [{ id: "chat-resource", title: "App 资源补丁", engine, config }] : []),
-    ...native
-      .filter((item) => item.feature.resourceBridge)
-      .map((item) => {
-        const bridge = item.feature.resourceBridge!;
-        return {
-          id: `bridge:${item.feature.id}`,
-          title: `${item.feature.title}命令桥接`,
-          engine: new PatchEngine(bridge, path.join(item.data, "bridge")),
-          config: { ...defaultConfig(bridge), appPath: config.appPath },
-        };
-      }),
+    ...companions(adapter, directory).map(({ adapter: bridge, ...task }) => ({
+      ...task,
+      config: { ...defaultConfig(bridge), appPath: config.appPath },
+    })),
   ];
   const reports = await Promise.all(
     tasks.map(async (task) => {
@@ -151,7 +186,10 @@ export async function prepareAppInstall(
           id: feature.id,
           title: feature.title,
           settings: feature.summarize(config.settings),
-          target: resourceTarget,
+          target: feature.resourceTarget
+            ? (reports.find(({ task }) => task.engine.adapter.id === feature.resourceTarget!.adapter.id)
+                ?.report.inspection.artifactPath ?? "")
+            : resourceTarget,
         };
       const item = native.find((item) => item.feature.id === feature.id)!;
       return {
@@ -161,7 +199,7 @@ export async function prepareAppInstall(
         target: [
           feature.targetFile,
           ...reports
-            .filter(({ task }) => task.id === `bridge:${feature.id}`)
+            .filter(({ task }) => task.engine.adapter.id === feature.resourceBridge?.id)
             .map(({ report }) => report.inspection.artifactPath),
         ].join("\n"),
       };
@@ -272,7 +310,7 @@ export async function prepareAppInstall(
         restartRequired: needsRestart,
         nextStep: complete
           ? needsRestart
-            ? `整个 App 安装完成。请重新打开 ${adapter.title} 后验证三个功能。`
+            ? `整个 App 安装完成。请重新打开 ${adapter.title} 后验证已安装功能。`
             : requiresAppExit
               ? "App 配置与包内备份已就绪，请重新打开应用。"
               : "整个 App 配置已就绪；若先前安装后未重新打开，请重新打开。否则仅快捷键配置通常即时生效。"
@@ -298,12 +336,10 @@ export async function restoreAppResources(
 
 function resourceEngines(adapter: AppAdapter, directory: string): PatchEngine[] {
   return [
-    ...(adapter.features.some((f) => f.kind === "resource") ? [new PatchEngine(adapter, directory)] : []),
-    ...adapter.features.flatMap((f) =>
-      f.kind === "ide-keybinding" && f.resourceBridge
-        ? [new PatchEngine(f.resourceBridge, path.join(directory, f.dataSubdirectory, "bridge"))]
-        : [],
-    ),
+    ...(adapter.features.some((f) => f.kind === "resource" && !f.resourceTarget)
+      ? [new PatchEngine(adapter, directory)]
+      : []),
+    ...companions(adapter, directory).map((item) => item.engine),
   ];
 }
 

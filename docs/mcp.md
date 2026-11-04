@@ -21,6 +21,12 @@
 
 实现使用官方 MCP TypeScript SDK 的 [stdio transport](https://ts.sdk.modelcontextprotocol.io/server#stdio)。源码在 `src/mcp/server.ts`，构建入口在 `scripts/mcp.ts`。
 
+## CodeBuddy 内置批准通知
+
+`list_apps` 和 `get_app {"appId":"codebuddy-cn"}` 已包含 `approval-notification`（工具批准通知），与 Raycast 使用同一内置适配器，无需再调用 `register_items`。该工具不能向内置 App 添加 Recipe。重新构建 MCP 并重启客户端连接后即可发现新功能；Raycast 重新构建安装后，在 CodeBuddy CN 下显示此项。
+
+`preflight_app {"appId":"codebuddy-cn"}` 会把该项纳入整体安装计划，与聚焦桥共用同一扩展资源、备份和恢复路径。MCP 不写入目标 App；在 Raycast 整体 Install 后重启 CodeBuddy。通知使用 CodeBuddy 原有 `Notification` hooks，matcher 为 `permission_prompt`，详见[点位说明](codebuddy-approval-investigation.md)。
+
 ## agent 的工作顺序
 
 1. `get_recipe_schema {}` 获取当前可执行协议和 driver 约束。静态文件：[Recipe v2 Schema](recipes/recipe-v2.schema.json)。

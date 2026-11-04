@@ -5,10 +5,10 @@ import { defaultConfig, AppFeature } from "../src/core/contracts";
 import { mergeFeatureSettings } from "../src/core/feature-settings";
 import { toIdeShortcut } from "../src/core/shortcuts";
 
-test("CodeBuddy exposes three individually configurable features", () => {
+test("CodeBuddy exposes shortcut features and the shared approval notification resource", () => {
   assert.deepEqual(
     codebuddyAdapter.features.map((feature) => feature.id),
-    ["new-chat", "stop-chat", "focus-input"],
+    ["new-chat", "stop-chat", "focus-input", "approval-notification"],
   );
   const fieldIds = new Set(codebuddyAdapter.fields.map((field) => field.id));
   for (const feature of codebuddyAdapter.features) {

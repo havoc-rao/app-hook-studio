@@ -9,7 +9,11 @@ import { ConfigureResourceFeature } from "./configure-resource-feature";
 import { ConfigureNativeFeature } from "./configure-native-feature";
 import { InstallApp } from "./install-app";
 import { ENTER_SHORTCUT, APP_INSTALL_SHORTCUT, ADD_ENTRY_SHORTCUT } from "./shortcuts";
-import { loadNativePreferences, saveNativePreferences } from "../application/app-install";
+import {
+  featureResourceEngine,
+  loadNativePreferences,
+  saveNativePreferences,
+} from "../application/app-install";
 import { AddEntry, DraftEntries } from "./add-entry";
 import { ConfigureApplication } from "./configure-application";
 
@@ -78,10 +82,17 @@ export function AppFeatures({ adapter }: { adapter: AppAdapter }) {
             if (feature.enabledControl)
               enabled[feature.id] =
                 saved.settings[feature.enabledControl.field] !== feature.enabledControl.disabled;
-            return [
-              feature.id,
-              `${feature.summarize(saved.settings)} · ${applied && feature.fieldIds.every((id) => Object.is(saved.settings[id], installed[id])) ? "已安装" : "待安装"}`,
-            ];
+            let ready =
+              applied && feature.fieldIds.every((id) => Object.is(saved.settings[id], installed[id]));
+            if (feature.resourceTarget) {
+              try {
+                const status = await featureResourceEngine(adapter, feature).inspect(saved.appPath);
+                ready = status.kind === "managed" && !status.upgradeRequired;
+              } catch {
+                ready = false;
+              }
+            }
+            return [feature.id, `${feature.summarize(saved.settings)} · ${ready ? "已安装" : "待安装"}`];
           }
           try {
             const preferences = await loadNativePreferences(
@@ -126,7 +137,7 @@ export function AppFeatures({ adapter }: { adapter: AppAdapter }) {
       active = false;
     };
   }, [adapter, revision]);
-  const icons = { plus: Icon.Plus, stop: Icon.Stop, focus: Icon.TextCursor };
+  const icons = { plus: Icon.Plus, stop: Icon.Stop, focus: Icon.TextCursor, notification: Icon.Bell };
   return (
     <List
       navigationTitle={adapter.title}

@@ -19,11 +19,13 @@ export type AppFeature = {
   id: string;
   title: string;
   description: string;
-  symbol: "plus" | "stop" | "focus";
+  symbol: "plus" | "stop" | "focus" | "notification";
 } & (
   | {
       kind: "resource";
       fieldIds: readonly string[];
+      /** Companion resource, shared by adapter ID with native bridges. */
+      resourceTarget?: { adapter: AppAdapter; dataSubdirectory: string };
       enabledControl?: { field: string; disabled: SettingValue; enabled: SettingValue };
       summarize(settings: Settings): string;
     }

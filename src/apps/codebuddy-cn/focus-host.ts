@@ -1,3 +1,4 @@
+import { renderApprovalHook } from "./approval-runtime";
 import { assertSymbolExport } from "./bundle-contract";
 import { FOCUS_BINDINGS } from "./focus-bindings";
 import { renderFocusHostV1 } from "./focus-host-runtime-v1";
@@ -15,14 +16,20 @@ export const HOST_PROFILE = {
   anchor: "}async function doActivate(ir,ar){",
 };
 const V1_BEGIN = "/* APP_HOOK_STUDIO_FOCUS_HOST v1 */\n";
-const BEGIN = "/* APP_HOOK_STUDIO_FOCUS_HOST v2 */\n",
+const V2_BEGIN = "/* APP_HOOK_STUDIO_FOCUS_HOST v2 */\n";
+const BEGIN = "/* APP_HOOK_STUDIO_FOCUS_HOST v3 */\n",
   END = "/* APP_HOOK_STUDIO_FOCUS_HOST_END */\n";
-const block = () => BEGIN + renderFocusHost() + END;
+const block = () => BEGIN + renderFocusHost() + renderApprovalHook() + END;
 function analyze(source: string) {
   if (sha256(source) === HOST_PROFILE.originalSha256) return { kind: "original" as const, original: source };
   const v1 = source.includes(V1_BEGIN);
-  const marker = v1 ? V1_BEGIN : BEGIN;
-  const expected = v1 ? V1_BEGIN + renderFocusHostV1() + END : block();
+  const v2 = source.includes(V2_BEGIN);
+  const marker = v1 ? V1_BEGIN : v2 ? V2_BEGIN : BEGIN;
+  const expected = v1
+    ? V1_BEGIN + renderFocusHostV1() + END
+    : v2
+      ? V2_BEGIN + renderFocusHost() + END
+      : block();
   const at = source.indexOf(marker),
     end = source.indexOf(END, at);
   if (
@@ -35,12 +42,12 @@ function analyze(source: string) {
   const original = source.slice(0, at) + source.slice(end + END.length);
   if (sha256(original) !== HOST_PROFILE.originalSha256 || original.indexOf(HOST_PROFILE.anchor) !== at)
     throw new Error("聚焦命令桥接原文摘要或位置不匹配。");
-  return { kind: "managed" as const, original, installedSettings: {}, upgradeRequired: v1 };
+  return { kind: "managed" as const, original, installedSettings: {}, upgradeRequired: v1 || v2 };
 }
 export const focusHostAdapter: AppAdapter = {
   id: "codebuddy-cn-focus-host",
-  title: "CodeBuddy 输入框聚焦桥接",
-  description: "明确的 IDE 命令 → Webview 请求 → 输入框焦点确认",
+  title: "CodeBuddy 聚焦与批准通知桥接",
+  description: "输入框聚焦命令及 Notification / permission_prompt 批准通知",
   supportDescription: "CodeBuddy 1.106.1 / genie 3.10.0，校验扩展主文件摘要。",
   defaultAppPath: "/Applications/CodeBuddy CN.app",
   resourceProcessing: "node-process",
@@ -66,6 +73,8 @@ export const focusHostAdapter: AppAdapter = {
     return original.replace(HOST_PROFILE.anchor, block() + HOST_PROFILE.anchor);
   },
   verifyPatch(source) {
+    assertSymbolExport(source, 946785, "HookManager");
+    assertSymbolExport(source, 155735, "HistoryService");
     assertSymbolExport(source, FOCUS_BINDINGS.provider, "ActivityBarChatWebviewProvider");
     assertSymbolExport(source, FOCUS_BINDINGS.chatView, "ChatViewService");
     new Script(source);

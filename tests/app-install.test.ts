@@ -86,7 +86,9 @@ async function fixture() {
     features: codebuddyAdapter.features.map((feature) =>
       feature.kind === "ide-keybinding"
         ? { ...feature, targetFile: target, resourceBridge: bridge }
-        : feature,
+        : feature.kind === "resource" && feature.resourceTarget
+          ? { ...feature, resourceTarget: { adapter: bridge, dataSubdirectory: "focus-keybinding/bridge" } }
+          : feature,
     ),
   };
   return { root, adapter, artifact, bridgePath, bridgeSource, target, source, data: path.join(root, "data") };
@@ -107,7 +109,7 @@ test("app installation distinguishes package permissions from native-only permis
 });
 
 test(
-  "whole-app plan is read-only; execute installs all three configured items with one resource patch",
+  "whole-app plan is read-only; shared approval/focus resource installs once for four items",
   localOnly,
   async (t) => {
     const f = await fixture();
@@ -115,9 +117,14 @@ test(
     const plan = await prepareAppInstall(f.adapter, f.data, defaultConfig(f.adapter));
     assert.deepEqual(
       plan.items.map((item) => item.id),
-      ["new-chat", "stop-chat", "focus-input"],
+      ["new-chat", "stop-chat", "focus-input", "approval-notification"],
     );
     assert.equal(plan.restartRequired, true);
+    assert.equal(plan.backups.length, 2);
+    assert.equal(
+      plan.items.find((item) => item.id === "approval-notification")?.target,
+      await fs.realpath(f.bridgePath),
+    );
     assert.equal(await fs.readFile(f.artifact, "utf8"), f.source);
     assert.equal(parse(await fs.readFile(f.target, "utf8")).length, 0);
     await assert.rejects(fs.stat(f.data), { code: "ENOENT" });

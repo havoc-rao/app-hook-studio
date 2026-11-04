@@ -307,7 +307,7 @@ test(
 );
 
 test(
-  "already-installed focus host v1 upgrades to v2 while preserving original identity",
+  "already-installed focus host v1 upgrades to v3 while preserving original identity",
   { skip: !hostPath },
   async () => {
     const source = await fs.readFile(hostPath!, "utf8"),
@@ -321,10 +321,40 @@ test(
     assert.equal(known.kind, "managed");
     assert.equal(known.original, source);
     const updated = focusHostAdapter.patch(known.original, {}, profile);
-    assert.ok(updated.includes("APP_HOOK_STUDIO_FOCUS_HOST v2"));
+    assert.ok(updated.includes("APP_HOOK_STUDIO_FOCUS_HOST v3"));
     assert.ok(updated.includes("__webpack_require__(637830).ChatViewService"));
     focusHostAdapter.verifyPatch(updated, profile);
     assert.equal(focusHostAdapter.analyze(updated, profile).original, source);
     assert.equal(focusHostAdapter.analyze(updated, profile).upgradeRequired, false);
+  },
+);
+
+test(
+  "installed v2 focus bridge upgrades to a single v3 focus/approval block and recovers exact bytes",
+  { skip: !hostPath },
+  async () => {
+    const source = await fs.readFile(hostPath!, "utf8"),
+      profile = { ...HOST_PROFILE, label: "test" };
+    const previous = source.replace(
+      HOST_PROFILE.anchor,
+      "/* APP_HOOK_STUDIO_FOCUS_HOST v2 */\n" +
+        renderFocusHost() +
+        "/* APP_HOOK_STUDIO_FOCUS_HOST_END */\n" +
+        HOST_PROFILE.anchor,
+    );
+    const known = focusHostAdapter.analyze(previous, profile);
+    assert.equal(known.upgradeRequired, true);
+    const upgraded = focusHostAdapter.patch(known.original, {}, profile);
+    focusHostAdapter.verifyPatch(upgraded, profile);
+    assert.equal(upgraded.split("/* APP_HOOK_STUDIO_FOCUS_HOST v3 */").length, 2);
+    assert.ok(upgraded.includes("notifyPermissionPrompt(...args)"));
+    assert.equal(focusHostAdapter.analyze(upgraded, profile).original, source);
+    assert.equal(focusHostAdapter.analyze(upgraded, profile).upgradeRequired, false);
+    assert.throws(() =>
+      focusHostAdapter.analyze(
+        upgraded.replace("notifyPermissionPrompt(...args)", "notifyPermissionPrompt()"),
+        profile,
+      ),
+    );
   },
 );

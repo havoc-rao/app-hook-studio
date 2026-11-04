@@ -1,7 +1,7 @@
 import { Action, ActionPanel, Form, Icon, Toast, showToast } from "@raycast/api";
 import { useEffect, useState } from "react";
 import { AppAdapter, AppFeature, AppConfig, SettingValue, defaultConfig } from "../core/contracts";
-import { PatchEngine } from "../core/engine";
+import { featureResourceEngine } from "../application/app-install";
 import { mergeFeatureSettings } from "../core/feature-settings";
 import { loadConfig, saveConfig } from "../core/storage";
 import { SaveAndInstallAppAction } from "./install-action";
@@ -27,10 +27,14 @@ export function ConfigureResourceFeature({
       const saved = await loadConfig(adapter);
       if (active) setDraft(saved);
       try {
-        const current = await new PatchEngine(adapter).inspect(saved.appPath);
+        const current = await featureResourceEngine(adapter, feature).inspect(saved.appPath);
         if (active)
           setStatus(
-            current.installedConfig ? feature.summarize(current.installedConfig.settings) : "尚未安装",
+            current.upgradeRequired
+              ? "需整体安装以升级补丁"
+              : current.installedConfig
+                ? feature.summarize(current.installedConfig.settings)
+                : "尚未安装",
           );
       } catch (error) {
         if (active) setStatus(error instanceof Error ? error.message : String(error));
@@ -93,6 +97,12 @@ export function ConfigureResourceFeature({
     >
       <Form.Description title={feature.title} text={feature.description} />
       <Form.Description title="当前生效" text={status} />
+      {feature.resourceTarget && !feature.fieldIds.length && (
+        <Form.Description
+          title="通知动作"
+          text="此点位随 App 整体安装。请在 CodeBuddy 原有 hooks 配置中设置 Notification，matcher 使用 permission_prompt；删除或禁用对应 hook 可停止通知动作。"
+        />
+      )}
       {feature.enabledControl && typeof feature.enabledControl.disabled !== "boolean" && (
         <Form.Checkbox
           id="featureEnabled"

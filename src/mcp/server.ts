@@ -101,7 +101,12 @@ export function createMcpServer(root = DATA_ROOT) {
             id: built.id,
             source: "built-in",
             supported: built.versions?.supported,
-            features: built.features.map(({ id, title, kind }) => ({ id, title, kind })),
+            features: built.features.map(({ id, title, kind, description }) => ({
+              id,
+              title,
+              kind,
+              description,
+            })),
             config: await loadConfig(built, path.join(root, "apps", appId)),
           };
         const recipe = await getRecipe(appId, root);
