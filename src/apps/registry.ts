@@ -10,3 +10,6 @@ export function getAdapter(id: string): AppAdapter {
   if (!adapter) throw new Error(`未知应用：${id}。使用 npm run cli -- list 查看已支持应用。`);
   return adapter;
 }
+
+// CLI transports have their own lifecycle; they are not UTF-8 application resource adapters.
+export { CLI_ADAPTERS } from "./codex-cli/registry";

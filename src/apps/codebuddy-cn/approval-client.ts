@@ -1,9 +1,11 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import net from "node:net";
+import type { ApprovalIdentity } from "./approval-identity";
 
 export type ApprovalAction = "allow" | "reject" | "skip";
 export type PendingApproval = {
+  identity?: ApprovalIdentity;
   request_id: string;
   session_id: string;
   tool_call_id: string;

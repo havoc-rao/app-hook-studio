@@ -16,6 +16,7 @@ import {
   restoreAppResources,
   adoptAppResources,
   prepareAppInstall,
+  prepareAppRestore,
   saveNativePreferences,
   loadNativePreferences,
 } from "../src/application/app-install";
@@ -104,8 +105,8 @@ test("app installation distinguishes package permissions from native-only permis
       .filter((feature) => feature.kind === "ide-keybinding")
       .map((feature) => ({ ...feature, resourceBridge: undefined })),
   };
-  assert.match(appInstallRequirements(nativeOnly).permission, /不修改 .app/);
-  assert.match(appInstallRequirements(nativeOnly).before, /无需退出/);
+  assert.match(appInstallRequirements(nativeOnly).permission, /完整备份/);
+  assert.match(appInstallRequirements(nativeOnly).before, /退出/);
 });
 
 test(
@@ -130,7 +131,7 @@ test(
     await assert.rejects(fs.stat(f.data), { code: "ENOENT" });
     const result = await plan.execute();
     assert.equal(result.complete, true);
-    assert.equal(result.steps.length, 4);
+    assert.equal(result.steps.length, 5);
     assert.notEqual(await fs.readFile(f.bridgePath, "utf8"), f.bridgeSource);
     const installed = await fs.readFile(f.artifact, "utf8");
     assert.equal(installed.split(BEGIN).length, 2);
@@ -164,7 +165,8 @@ test(
     const install = IdeKeybindingInstaller.prototype.install;
     let partial;
     try {
-      IdeKeybindingInstaller.prototype.install = async () => {
+      IdeKeybindingInstaller.prototype.install = async function (preview) {
+        if (preview) return install.call(this, true);
         throw new Error("fixture write permission denied");
       };
       partial = await plan.execute();
@@ -178,6 +180,8 @@ test(
     );
     assert.match(partial.steps[2].detail, /permission denied/);
     assert.equal(parse(await fs.readFile(f.target, "utf8")).length, 0);
+    assert.equal((await plan.execute()).complete, false);
+    await (await prepareAppRestore(f.adapter, f.data)).execute(() => {});
     const retried = await plan.execute();
     assert.equal(retried.complete, true);
     assert.equal((await fs.readFile(f.artifact, "utf8")).split(BEGIN).length, 2);
@@ -288,8 +292,10 @@ test(
       await fs.mkdir(path.dirname(legacy), { recursive: true });
       await fs.rename(inspection.backupPath, legacy);
     }
+    await assert.rejects(prepareAppInstall(f.adapter, f.data), /Restore/);
+    await (await prepareAppRestore(f.adapter, f.data)).execute(() => {});
     const plan = await prepareAppInstall(f.adapter, f.data);
-    assert.equal(plan.restartRequired, false);
+    assert.equal(plan.restartRequired, true);
     assert.equal(plan.requiresAppExit, true);
     assert.equal(
       plan.backups.every((backup) => backup.migrationRequired),
@@ -298,5 +304,52 @@ test(
     assert.equal((await plan.execute()).complete, true);
     assert.equal((await mainEngine.inspect(f.adapter.defaultAppPath)).backupLocation, "inside-app");
     assert.equal((await bridgeEngine.inspect(f.adapter.defaultAppPath)).backupLocation, "inside-app");
+  },
+);
+
+test(
+  "whole-app Restore includes exact shortcut bytes and retains configuration and reusable backups",
+  localOnly,
+  async (t) => {
+    const f = await fixture();
+    t.after(() => fs.rm(f.root, { recursive: true, force: true }));
+    const before = await fs.readFile(f.target, "utf8");
+    await (await prepareAppInstall(f.adapter, f.data, defaultConfig(f.adapter))).execute();
+    await assert.rejects(prepareAppInstall(f.adapter, f.data), /Restore/);
+    const plan = await prepareAppRestore(f.adapter, f.data);
+    assert.equal(plan.entries.length, 3);
+    const completed: string[] = [];
+    await plan.execute((title) => completed.push(title));
+    assert.equal(completed.length, 3);
+    assert.equal(await fs.readFile(f.target, "utf8"), before);
+    assert.equal(await fs.readFile(f.artifact, "utf8"), f.source);
+    assert.equal(await fs.readFile(f.bridgePath, "utf8"), f.bridgeSource);
+    assert.equal((await (await prepareAppInstall(f.adapter, f.data)).execute()).complete, true);
+  },
+);
+
+test(
+  "legacy complete restore proves shortcut reconstruction and rejects later edits",
+  localOnly,
+  async (t) => {
+    const f = await fixture();
+    t.after(() => fs.rm(f.root, { recursive: true, force: true }));
+    const before = await fs.readFile(f.target, "utf8");
+    await (await prepareAppInstall(f.adapter, f.data, defaultConfig(f.adapter))).execute();
+    // Simulate a pre-snapshot installation: only original resource and schema-2 shortcut backups remain.
+    await fs.rm(path.join(f.adapter.defaultAppPath, "Contents/Resources/app-hook-studio-backups/whole-app"), {
+      recursive: true,
+    });
+    await assert.rejects(prepareAppInstall(f.adapter, f.data), /旧版安装/);
+    const installed = await fs.readFile(f.target, "utf8");
+    await fs.writeFile(f.target, installed + "// user edit\n");
+    await assert.rejects(prepareAppRestore(f.adapter, f.data), /无法精确重建/);
+    await fs.writeFile(f.target, installed);
+    const plan = await prepareAppRestore(f.adapter, f.data);
+    assert.equal(plan.legacy, true);
+    await plan.execute(() => {});
+    assert.equal(await fs.readFile(f.target, "utf8"), before);
+    assert.equal(await fs.readFile(f.artifact, "utf8"), f.source);
+    assert.equal(await fs.readFile(f.bridgePath, "utf8"), f.bridgeSource);
   },
 );

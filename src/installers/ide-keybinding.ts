@@ -160,8 +160,66 @@ export class IdeKeybindingInstaller {
     return { ...parsed, index: -1, marker: undefined, legacy: false };
   }
 
+  private async source(): Promise<string> {
+    try {
+      return await fs.readFile(this.target, "utf8");
+    } catch (error) {
+      if (isMissing(error)) return "[]\n";
+      throw error;
+    }
+  }
+
+  async preview(enabled: boolean): Promise<string> {
+    return enabled ? this.install(true) : this.restore(true);
+  }
+
+  /** Legacy schema 2 has no snapshot hashes. Prove exact reconstruction before importing it. */
+  async legacyBaseline() {
+    const state = await this.state();
+    const source = await this.source();
+    const found = this.locate(source, state);
+    let exists = true;
+    try {
+      await fs.stat(this.target);
+    } catch (error) {
+      if (!isMissing(error)) throw error;
+      exists = false;
+    }
+    if (!state && found.index < 0)
+      return {
+        original: exists ? this.target : null,
+        before: exists ? sha256(source) : null,
+        after: exists ? sha256(source) : null,
+      };
+    const original = await fs.readFile(this.backup, "utf8");
+    const before = sha256(original),
+      after = exists ? sha256(source) : null;
+    if (
+      state?.legacy &&
+      before === state.legacy.beforeHash &&
+      [before, state.legacy.afterHash].includes(after!)
+    )
+      return { original: this.backup, before, after };
+    if (source === original) return { original: this.backup, before, after };
+    const binding = found.index >= 0 ? this.ownedBinding(found.values[found.index]) : undefined;
+    if (state && binding && found.marker) {
+      let candidate = edit(original, -1, binding);
+      const node = document(candidate).nodes.at(-1)!;
+      const indent =
+        candidate.slice(candidate.lastIndexOf("\n", node.offset) + 1, node.offset).match(/^\s*/)?.[0] ?? "";
+      candidate =
+        candidate.slice(0, node.offset) +
+        this.marker +
+        (candidate.includes("\r\n") ? "\r\n" : "\n") +
+        indent +
+        candidate.slice(node.offset);
+      if (candidate === source) return { original: this.backup, before, after };
+    }
+    throw new Error("旧快捷键备份无法精确重建当前安装（可能有后续修改），拒绝完整恢复。请保留现场与备份。");
+  }
+
   async inspect(): Promise<BindingInspection> {
-    const source = await fs.readFile(this.target, "utf8");
+    const source = await this.source();
     const state = await this.state();
     const found = this.locate(source, state);
     if (found.index >= 0) {
@@ -183,24 +241,32 @@ export class IdeKeybindingInstaller {
   }
 
   private async commit(source: string, candidate: string) {
-    if (sha256(await fs.readFile(this.target)) !== sha256(source))
+    if (sha256(await this.source()) !== sha256(source))
       throw new Error("快捷键文件发生变化，未覆盖，请重新打开配置。");
-    await writeAtomic(this.target, candidate, (await fs.stat(this.target)).mode & 0o777);
+    let mode = 0o600;
+    try {
+      mode = (await fs.stat(this.target)).mode & 0o777;
+    } catch (error) {
+      if (!isMissing(error)) throw error;
+    }
+    await fs.mkdir(path.dirname(this.target), { recursive: true });
+    await writeAtomic(this.target, candidate, mode);
     if (sha256(await fs.readFile(this.target)) !== sha256(candidate))
       throw new Error("写入后校验失败，请检查配置。");
   }
 
-  async install(): Promise<string> {
-    const source = await fs.readFile(this.target, "utf8");
+  async install(preview = false): Promise<string> {
+    const source = await this.source();
     const state = await this.state();
     const found = this.locate(source, state);
     const existing =
       found.index >= 0
         ? globalBinding(found.values[found.index], this.binding.command, this.binding.args)
         : undefined;
-    if (existing?.key === this.binding.key && !found.legacy) return "快捷键已经安装，无需重复写入。";
+    if (existing?.key === this.binding.key && !found.legacy)
+      return preview ? source : "快捷键已经安装，无需重复写入。";
     if (found.index < 0 && appendBinding(source, this.binding) === source)
-      return "已有相同用户规则；不接管用户规则。";
+      return preview ? source : "已有相同用户规则；不接管用户规则。";
     if (found.index < 0 && state?.legacy && sha256(source) !== state.legacy.beforeHash) {
       // Old snapshots have no per-rule ownership. Only migrate their exact recorded bytes.
       const raw = JSON.parse(await fs.readFile(this.stateFile, "utf8")) as { schema?: number };
@@ -221,6 +287,7 @@ export class IdeKeybindingInstaller {
         candidate.slice(node.offset);
     }
     document(candidate);
+    if (preview) return candidate;
     await fs.mkdir(this.dataDirectory, { recursive: true, mode: 0o700 });
     try {
       await fs.writeFile(this.backup, source, { flag: "wx", mode: 0o600 });
@@ -245,19 +312,22 @@ export class IdeKeybindingInstaller {
     return found.index >= 0 ? "已更新此功能的快捷键，其他用户配置保留。" : "已安装此功能的全局快捷键。";
   }
 
-  async restore(): Promise<string> {
+  async restore(preview = false): Promise<string> {
     const state = await this.state();
-    const source = await fs.readFile(this.target, "utf8");
+    const source = await this.source();
     const found = this.locate(source, state);
-    if (found.index < 0) return "没有本工具拥有的规则，不修改用户配置。";
+    if (found.index < 0) return preview ? source : "没有本工具拥有的规则，不修改用户配置。";
     if (found.legacy) {
       const original = await fs.readFile(this.backup, "utf8");
       if (!state?.legacy || sha256(original) !== state.legacy.beforeHash) throw new Error("旧备份不匹配。");
+      if (preview) return original;
       await this.commit(source, original);
     } else {
       const marker = found.marker!;
       const unmarked = source.slice(0, marker.offset) + source.slice(marker.offset + marker.length);
-      await this.commit(source, edit(unmarked, found.index, undefined));
+      const candidate = edit(unmarked, found.index, undefined);
+      if (preview) return candidate;
+      await this.commit(source, candidate);
     }
     return "已移除此功能的规则，其他用户配置保留。";
   }

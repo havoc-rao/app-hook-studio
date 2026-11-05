@@ -9,3 +9,5 @@ backups/
 
 # Generated standalone resource worker, packaged into Raycast assets.
 assets/resource-worker.cjs
+
+assets/codex-cli/

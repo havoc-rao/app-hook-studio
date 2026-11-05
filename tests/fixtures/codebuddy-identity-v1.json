@@ -1,0 +1,85 @@
+{
+  "schema": 1,
+  "provenance": "synthetic; native CodeBuddy lifecycle validation is separate",
+  "cases": [
+    {
+      "name": "machine-a",
+      "machine": "pc-a",
+      "roots": ["/work/demo"],
+      "session": "session-a",
+      "workspace_group": "a"
+    },
+    {
+      "name": "different-machine-same-path",
+      "machine": "pc-b",
+      "roots": ["/work/demo"],
+      "session": "session-a",
+      "workspace_group": "b"
+    },
+    {
+      "name": "same-name-different-path",
+      "machine": "pc-a",
+      "roots": ["/other/demo"],
+      "session": "session-a",
+      "workspace_group": "c"
+    },
+    {
+      "name": "same-workspace-other-session",
+      "machine": "pc-a",
+      "roots": ["/work/demo"],
+      "session": "session-b",
+      "workspace_group": "a"
+    },
+    {
+      "name": "other-window",
+      "machine": "pc-a",
+      "roots": ["/work/demo"],
+      "session": "session-a",
+      "workspace_group": "a"
+    },
+    {
+      "name": "child-a",
+      "machine": "pc-a",
+      "roots": ["/work/demo"],
+      "session": "session-a",
+      "task": "task-a",
+      "workspace_group": "a"
+    },
+    {
+      "name": "child-b",
+      "machine": "pc-a",
+      "roots": ["/work/demo"],
+      "session": "session-a",
+      "task": "task-b",
+      "workspace_group": "a"
+    },
+    {
+      "name": "unknown-machine",
+      "machine": null,
+      "roots": ["/work/demo"],
+      "session": "session-a",
+      "workspace_group": null
+    },
+    {
+      "name": "empty-window",
+      "machine": "pc-a",
+      "roots": [],
+      "session": "session-a",
+      "workspace_group": null
+    },
+    {
+      "name": "multi-root",
+      "machine": "pc-a",
+      "roots": ["/work/a", "/work/b"],
+      "session": "session-a",
+      "workspace_group": "multi"
+    },
+    {
+      "name": "multi-root-reordered",
+      "machine": "pc-a",
+      "roots": ["/work/b", "/work/a"],
+      "session": "session-a",
+      "workspace_group": "multi"
+    }
+  ]
+}

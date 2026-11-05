@@ -5,7 +5,12 @@ function object(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 /** Parse only the selected factory; never evaluate the target or build a whole-bundle AST. */
-export function assertSymbolExport(source: string, moduleId: number, exportName: string): void {
+export function assertSymbolExport(
+  source: string,
+  moduleId: number,
+  exportName: string,
+  symbolName = exportName,
+): void {
   // Match a complete object key; 5239 must not match the suffix of 175239.
   const matcher = new RegExp(`(?:^|[,{])${moduleId}:`, "g"),
     match = matcher.exec(source);
@@ -39,7 +44,7 @@ export function assertSymbolExport(source: string, moduleId: number, exportName:
       object(right.callee)?.name === "Symbol"
     ) {
       const args = right.arguments as unknown[];
-      if (object(args[0])?.value === exportName) found = true;
+      if (object(args[0])?.value === symbolName) found = true;
     }
     for (const entry of Object.values(node)) visit(entry);
   };

@@ -1,0 +1,39 @@
+{
+  "provenance": "synthetic native metadata; not a live-session capture",
+  "cases": [
+    {
+      "name": "named-session",
+      "session": "s-a",
+      "metadata": { "id": "s-a", "name": "修复登录" },
+      "title": "修复登录"
+    },
+    {
+      "name": "same-title-other-id",
+      "session": "s-b",
+      "metadata": { "id": "s-b", "name": "修复登录" },
+      "title": "修复登录"
+    },
+    {
+      "name": "renamed-session",
+      "session": "s-a",
+      "metadata": { "id": "s-a", "name": "登录修复完成" },
+      "title": "登录修复完成"
+    },
+    { "name": "empty-title", "session": "s-a", "metadata": { "id": "s-a", "name": "  " }, "title": null },
+    { "name": "missing-title", "session": "s-a", "metadata": { "id": "s-a" }, "title": null },
+    {
+      "name": "metadata-conflict",
+      "session": "s-a",
+      "metadata": { "id": "s-other", "name": "不可采用" },
+      "title": null,
+      "diagnostic": "SESSION_METADATA_ID_MISMATCH"
+    },
+    {
+      "name": "missing-session",
+      "session": "s-a",
+      "metadata": null,
+      "title": null,
+      "diagnostic": "SESSION_METADATA_UNAVAILABLE"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { RestoreAppAction } from "./restore-app";
 import { Action, ActionPanel, Form, Icon, Toast, open, showToast, useNavigation } from "@raycast/api";
 import { useEffect, useState } from "react";
 import { AppAdapter } from "../core/contracts";
@@ -11,6 +12,7 @@ import { APP_INSTALL_SHORTCUT } from "./shortcuts";
 
 import { loadConfig } from "../core/storage";
 import { AppVersionFields } from "./app-version";
+import { snapshotDirectory } from "../application/app-snapshot";
 
 export function InstallApp({ adapter, onChanged = () => {} }: { adapter: AppAdapter; onChanged?(): void }) {
   const [appPath, setAppPath] = useState<string>();
@@ -98,6 +100,7 @@ export function InstallApp({ adapter, onChanged = () => {} }: { adapter: AppAdap
               />
             </>
           )}
+          <RestoreAppAction adapter={adapter} onChanged={onChanged} />
           <Action.OpenInBrowser
             title="查看 macOS 权限说明"
             url="https://support.apple.com/en-au/guide/mac-help/mchl211c911f/mac"
@@ -112,6 +115,12 @@ export function InstallApp({ adapter, onChanged = () => {} }: { adapter: AppAdap
       {appPath && <AppVersionFields adapter={adapter} appPath={appPath} />}
       <Form.Description title="支持版本要求" text={adapter.supportDescription} />
       {error && <Form.Description title="需要处理" text={error} />}
+      {plan && (
+        <Form.Description
+          title="完整恢复快照"
+          text={`${snapshotDirectory(plan.appPath)}\n首次备份包含所有资源与快捷键；已有安装先 Restore，再 Install。`}
+        />
+      )}
       {plan?.items.map((item) => (
         <Form.Description key={item.id} title={item.title} text={`${item.settings}\n${item.target}`} />
       ))}
@@ -124,7 +133,7 @@ export function InstallApp({ adapter, onChanged = () => {} }: { adapter: AppAdap
       ))}
       <Form.Description
         title="恢复方式"
-        text="从包内原文备份校验后覆盖回资源文件。备份目录保留；官方更新前先恢复或另存备份。用户快捷键记录仍在用户数据目录。"
+        text="首次 Install 前保存全部资源和快捷键文件快照。以后先 Restore 再 Install；备份保留，官方更新前先恢复或另存备份。"
       />
       <Form.Separator />
       <Form.Description title="所需权限" text={requirements.permission} />

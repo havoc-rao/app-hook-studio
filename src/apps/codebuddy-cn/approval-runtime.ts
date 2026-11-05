@@ -1,4 +1,5 @@
 import { renderApprovalControl } from "./approval-control-runtime";
+import { renderApprovalIdentity } from "./approval-identity";
 
 /** Runs in the existing extension activation scope, alongside the focus bridge. */
 export function renderApprovalHook(options: { control?: boolean; directory?: string } = {}): string {
@@ -17,6 +18,7 @@ export function renderApprovalHook(options: { control?: boolean; directory?: str
     const protocol = __webpack_require__(946785);
     const NotificationManager = __webpack_require__(176998).NotificationManager;
     const pending = __webpack_require__(445368).ToolState.PENDING;
+    const identify = ${renderApprovalIdentity()};
     control = ${options.control === false ? "undefined" : renderApprovalControl(options.directory)};
     const notify = (listener, manager, callId, tool, subagent) => {
       if (disposed || tool.state !== pending) return;
@@ -26,13 +28,16 @@ export function renderApprovalHook(options: { control?: boolean; directory?: str
       if (waiting.has(tool) && waiting.get(tool) === stamp) return;
       waiting.set(tool, stamp);
       const context = manager.getContext?.() || {};
-      const sessionId = manager.sessionId || context.conversationId || listener.conversationId || listener.taskTool?.getConversationId?.();
+      const candidates = [[manager.sessionId, "manager.sessionId"], [context.conversationId, "manager.context.conversationId"],
+        [listener.conversationId, "listener.conversationId"], [listener.taskTool?.context?.conversationId, "listener.taskTool.context.conversationId"]];
+      const [sessionId, sessionSource] = candidates.find(([value]) => typeof value === "string" && value.length) || [];
       if (!sessionId) throw new Error("Missing approval session ID");
       const agent = listener.contextManager?.getContext(sessionId)?.agent;
       const cwd = context.workingDirectory || agent?.getUserContext?.()?.env?.workspace;
+      const cwdSource = context.workingDirectory ? "tool-context" : cwd ? "agent-user-context" : "unknown";
+      const identity = identify({ listener, manager, sessionId, sessionSource, subagent, cwdSource });
       // Never substitute the extension host's process.cwd() for the user's workspace.
-      const request = control?.register({ listener, manager, callId, tool, subagent, sessionId, cwd });
-      if (!cwd) throw new Error("Missing approval workspace");
+      const request = control?.register({ listener, manager, callId, tool, subagent, sessionId, cwd, identity });
       const hookManager = manager.toolHookExecutor?.hookManager || container.get(protocol.HookManager);
       let transcript = manager.transcriptPath || "";
       if (!transcript) {
@@ -40,11 +45,12 @@ export function renderApprovalHook(options: { control?: boolean; directory?: str
       }
       const message = "Tool " + protocol.normalizeToolName(tool.name) + " requires user approval (" + callId + ")" +
         (tool.safetyConfirmMessage || tool.hookConfirmMessage ? ": " + (tool.safetyConfirmMessage || tool.hookConfirmMessage) : "");
-      const extendedManager = request ? { executeHooks: (event, payload) => hookManager.executeHooks(event, {
-        ...payload, request_id: request.request_id, tool_call_id: callId,
-        tool_name: protocol.normalizeToolName(tool.name), approval_channel: request.approval_channel,
-      }) } : hookManager;
-      const notification = new NotificationManager(extendedManager, undefined, cwd);
+      const extendedManager = { executeHooks: (event, payload) => hookManager.executeHooks(event, {
+        ...payload, cwd: cwd || "", identity: request?.identity || identity,
+        ...(request ? { request_id: request.request_id, tool_call_id: callId,
+          tool_name: protocol.normalizeToolName(tool.name), approval_channel: request.approval_channel } : {}),
+      }) };
+      const notification = new NotificationManager(extendedManager, undefined, cwd || "");
       // Snapshot per-manager context before asynchronous execution; no singleton session state.
       const args = [message, sessionId, transcript, manager.generationId || agent?.requestId,
         manager.model || listener.modelId || agent?.getModel?.()?.id, manager.client, manager.version];

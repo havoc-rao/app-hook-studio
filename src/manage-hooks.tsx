@@ -1,7 +1,10 @@
+import { RestoreAppAction } from "./ui/restore-app";
 import path from "node:path";
 import { configureResourceWorker } from "./core/resource-worker";
 import { Action, ActionPanel, Icon, List, environment } from "@raycast/api";
 import { RegisteredApps, recipeUiEvents } from "./ui/registered-apps";
+import CodexCli from "./apps/codex-cli/manage";
+import { CLI_ADAPTERS } from "./apps/codex-cli/registry";
 import { APP_ADAPTERS } from "./apps/registry";
 import { InstallApp } from "./ui/install-app";
 import { ENTER_SHORTCUT, APP_INSTALL_SHORTCUT, ADD_ENTRY_SHORTCUT, REFRESH_SHORTCUT } from "./ui/shortcuts";
@@ -36,6 +39,22 @@ export default function ManageHooks() {
     >
       <RegisteredApps />
       <DraftEntries />
+      <List.Section title="CLI 接入">
+        {CLI_ADAPTERS.map((adapter) => (
+          <List.Item
+            key={adapter.id}
+            title={adapter.title}
+            subtitle={adapter.description}
+            icon="chatgpt.png"
+            accessories={[{ tag: "CLI" }]}
+            actions={
+              <ActionPanel>
+                <Action.Push title="配置与安装 CLI" shortcut={ENTER_SHORTCUT} target={<CodexCli />} />
+              </ActionPanel>
+            }
+          />
+        ))}
+      </List.Section>
       {APP_ADAPTERS.map((adapter) => (
         <List.Item
           key={adapter.id}
@@ -60,6 +79,7 @@ export default function ManageHooks() {
                 shortcut={APP_INSTALL_SHORTCUT}
                 target={<InstallApp adapter={adapter} />}
               />
+              <RestoreAppAction adapter={adapter} />
               <Action.Push
                 title="Add App / 新增应用"
                 shortcut={ADD_ENTRY_SHORTCUT}

@@ -1,3 +1,4 @@
+import { RestoreAppAction } from "./restore-app";
 import { Action, ActionPanel, Color, Icon, List, Toast, showToast } from "@raycast/api";
 import { useEffect, useState } from "react";
 import path from "node:path";
@@ -209,6 +210,31 @@ export function AppFeatures({ adapter }: { adapter: AppAdapter }) {
           />
         </List.Section>
       )}
+      <List.Section title="安装与恢复">
+        <List.Item
+          title="Install / 安装 App"
+          icon={Icon.Download}
+          actions={
+            <ActionPanel>
+              <Action.Push
+                title="查看安装计划"
+                target={<InstallApp adapter={adapter} onChanged={refresh} />}
+              />
+              <RestoreAppAction adapter={adapter} onChanged={refresh} />
+            </ActionPanel>
+          }
+        />
+        <List.Item
+          title="Restore / 完整恢复 App"
+          subtitle="资源与快捷键恢复到安装前"
+          icon={Icon.Undo}
+          actions={
+            <ActionPanel>
+              <RestoreAppAction adapter={adapter} onChanged={refresh} />
+            </ActionPanel>
+          }
+        />
+      </List.Section>
       <DraftEntries parentId={adapter.id} revision={revision} onChanged={refresh} />
       <List.Section title="功能" subtitle="单项保存配置，App 统一安装">
         {adapter.features.map((feature) => (

@@ -36,6 +36,7 @@ export function renderApprovalControl(directory?: string): string {
         request_id: id, session_id: info.sessionId, tool_call_id: info.callId,
         tool_name: info.tool.name, tool_input: input, cwd: info.cwd || "",
         subagent: info.subagent, reason: info.tool.safetyConfirmMessage || info.tool.hookConfirmMessage || "",
+        ...(info.identity ? { identity: JSON.parse(JSON.stringify(info.identity)) } : {}),
         created_at: Date.now(), expires_at: Date.now() + 30 * 60 * 1000,
         approval_channel: { protocol: 1, transport: "unix", socket_path: socketPath, window_id: windowId },
       };

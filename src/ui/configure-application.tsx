@@ -1,3 +1,4 @@
+import { RestoreAppAction } from "./restore-app";
 import { Action, ActionPanel, Form, Icon, Toast, open, showToast } from "@raycast/api";
 import { useEffect, useMemo, useState } from "react";
 import { promises as fs } from "node:fs";
@@ -7,7 +8,7 @@ import { SaveAndInstallAppAction } from "./install-action";
 import { ENTER_SHORTCUT } from "./shortcuts";
 import { loadConfig, saveConfig } from "../core/storage";
 
-import { restoreAppResources, adoptAppResources } from "../application/app-install";
+import { adoptAppResources } from "../application/app-install";
 import { AppVersionFields } from "./app-version";
 
 export function ConfigureApplication({ adapter, onChanged }: { adapter: AppAdapter; onChanged(): void }) {
@@ -89,16 +90,7 @@ export function ConfigureApplication({ adapter, onChanged }: { adapter: AppAdapt
               })
             }
           />
-          <Action
-            title="恢复整个资源补丁"
-            icon={Icon.Undo}
-            onAction={() =>
-              task("恢复", async () => {
-                await restoreAppResources(adapter, appPath);
-                return "原始资源已恢复；重新打开应用生效。";
-              })
-            }
-          />
+          <RestoreAppAction adapter={adapter} onChanged={onChanged} />
           <Action
             title="打开 App 内原文件备份"
             icon={Icon.Folder}
@@ -142,7 +134,7 @@ export function ConfigureApplication({ adapter, onChanged }: { adapter: AppAdapt
       <Form.Description title="支持范围" text={adapter.supportDescription} />
       <Form.Description
         title="恢复范围"
-        text="恢复整个资源补丁会移除该资源上的所有注入功能，包含聚焦命令桥接；不改变用户快捷键配置。恢复后新聚焦命令不可用，需重新整体安装。恢复前请退出应用。"
+        text="Restore 精确恢复首次完整安装快照中的资源与快捷键文件。备份和已保存偏好保留；更新安装前先 Restore。"
       />
       <Form.Description
         title="写入权限"

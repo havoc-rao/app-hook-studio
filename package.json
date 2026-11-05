@@ -36,11 +36,15 @@
     "build:mcp": "npm run build:worker && esbuild scripts/mcp.ts --bundle --platform=node --format=cjs --outfile=dist/mcp.cjs",
     "mcp": "tsx scripts/mcp.ts",
     "pretest": "npm run build:mcp && npm run build:memory-check",
-    "prebuild": "npm run build:mcp",
-    "preinstall:local": "npm run build:mcp",
+    "prebuild": "npm run build:mcp && npm run build:codex",
+    "preinstall:local": "npm run build:mcp && npm run build:codex",
     "schema:recipe": "tsx scripts/recipe-schema.ts",
     "build:worker": "esbuild scripts/resource-worker.ts --bundle --platform=node --format=cjs --outfile=assets/resource-worker.cjs",
-    "build:memory-check": "esbuild scripts/resource-memory-check.ts --bundle --platform=node --format=cjs --outfile=dist/resource-memory-check.cjs"
+    "build:memory-check": "esbuild scripts/resource-memory-check.ts --bundle --platform=node --format=cjs --outfile=dist/resource-memory-check.cjs",
+    "build:codex": "node scripts/build-codex.cjs",
+    "codex:install": "npm run build:codex && tsx scripts/setup-codex.ts install",
+    "codex:status": "tsx scripts/setup-codex.ts status",
+    "codex:uninstall": "tsx scripts/setup-codex.ts uninstall"
   },
   "engines": {
     "node": ">=22.22.2"
@@ -60,7 +64,8 @@
     "esbuild": "^0.28.2",
     "prettier": "^3.6.2",
     "tsx": "4.23.15",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "ws": "^8.22.1"
   },
   "packageManager": "npm@11.19.0"
 }

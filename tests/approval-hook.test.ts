@@ -67,7 +67,7 @@ function fixture(
       _logger: unknown,
       private cwd: string,
     ) {
-      if (!options.controlDirectory) assert.equal(manager, hookManager);
+      assert.equal(typeof manager.executeHooks, "function");
     }
     async notifyPermissionPrompt(...args: unknown[]) {
       calls.push({ cwd: this.cwd, args });
@@ -75,6 +75,7 @@ function fixture(
         hook_event_name: "Notification",
         notification_type: "permission_prompt",
         session_id: args[1],
+        cwd: this.cwd || process.cwd(),
         message: args[0],
       });
       if (options.failure) throw new Error("notification failed");
@@ -90,7 +91,12 @@ function fixture(
       ir: { subscriptions },
       console: { error: (...args: unknown[]) => errors.push(args) },
       container: {
-        get: () => {
+        get: (token: unknown) => {
+          if (token === "conversation-token")
+            return {
+              initialized: true,
+              conversationMap: new Map([["session-a", { id: "session-a", name: "Fixture title" }]]),
+            };
           throw new Error("Unexpected fallback");
         },
       },
@@ -104,6 +110,27 @@ function fixture(
             return path;
           case 977598:
             return crypto;
+          case 302351:
+            return { ConversationManagerToken: "conversation-token" };
+          case 370857:
+            return { hostname: () => "Fixture Mac" };
+          case 426850:
+            return {
+              env: { machineId: "synthetic-machine-a" },
+              workspace: {
+                name: "demo",
+                workspaceFolders: [
+                  {
+                    name: "demo",
+                    uri: {
+                      scheme: "file",
+                      fsPath: "/work/demo",
+                      toString: () => "file:///work/demo",
+                    },
+                  },
+                ],
+              },
+            };
           case 73280:
             return { ToolManagerListener: Main };
           case 748749:
@@ -228,8 +255,10 @@ test("forwarded parent-task approvals are not double counted, and missing worksp
   const manager = { ...h.manager(), getContext: () => ({}) };
   listener.onUserConfirmRequired(manager, "tool-a", h.tool());
   await tick();
-  assert.equal(h.calls.length, 0);
-  assert.equal(h.errors.length, 1);
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.calls[0].cwd, "");
+  assert.equal(h.payloads[0].cwd, "");
+  assert.equal(h.errors.length, 0);
   h.dispose();
 });
 
@@ -279,6 +308,11 @@ test("real notification wrapper publishes the same structured request ID and soc
   assert.equal(h.payloads[0].hook_event_name, "Notification");
   assert.equal(h.payloads[0].notification_type, "permission_prompt");
   assert.equal(h.payloads[0].tool_name, "Bash");
+  assert.deepEqual(JSON.parse(JSON.stringify(h.payloads[0].identity)), current.requests[0].identity);
+  assert.equal(current.requests[0].identity?.agent.id, "session-a");
+  assert.equal(current.requests[0].identity?.session?.title, "Fixture title");
+  assert.equal(current.requests[0].identity?.machine.source, "vscode.env.machineId");
+  assert.equal(current.requests[0].identity?.workspace.roots[0].path, "/work/demo");
   (listener.onToolExecutionComplete as (...args: unknown[]) => unknown)(h.manager(), tool.id, tool);
   assert.equal((await listPendingApprovals(root)).requests.length, 0);
 });

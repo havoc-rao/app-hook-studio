@@ -1,3 +1,4 @@
+import { RestoreAppAction } from "./restore-app";
 import { Action, ActionPanel, Icon, List } from "@raycast/api";
 import { EventEmitter } from "node:events";
 import { useEffect, useState } from "react";
@@ -70,6 +71,7 @@ export function RegisteredApps() {
                 icon={Icon.Download}
                 target={<InstallApp adapter={adapter} />}
               />
+              <RestoreAppAction adapter={adapter} />
               <Action title="刷新注册应用" icon={Icon.ArrowClockwise} onAction={refresh} />
             </ActionPanel>
           }

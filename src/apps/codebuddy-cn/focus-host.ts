@@ -1,4 +1,6 @@
 import { renderApprovalHookV3 } from "./approval-runtime-v3";
+import { renderApprovalHookV5 } from "./approval-runtime-v5";
+import { renderApprovalHookV4 } from "./approval-runtime-v4";
 import { renderApprovalHook } from "./approval-runtime";
 import { assertSymbolExport } from "./bundle-contract";
 import { FOCUS_BINDINGS } from "./focus-bindings";
@@ -19,7 +21,9 @@ export const HOST_PROFILE = {
 const V1_BEGIN = "/* APP_HOOK_STUDIO_FOCUS_HOST v1 */\n";
 const V2_BEGIN = "/* APP_HOOK_STUDIO_FOCUS_HOST v2 */\n";
 const V3_BEGIN = "/* APP_HOOK_STUDIO_FOCUS_HOST v3 */\n";
-const BEGIN = "/* APP_HOOK_STUDIO_FOCUS_HOST v4 */\n",
+const V4_BEGIN = "/* APP_HOOK_STUDIO_FOCUS_HOST v4 */\n";
+const V5_BEGIN = "/* APP_HOOK_STUDIO_FOCUS_HOST v5 */\n";
+const BEGIN = "/* APP_HOOK_STUDIO_FOCUS_HOST v6 */\n",
   END = "/* APP_HOOK_STUDIO_FOCUS_HOST_END */\n";
 const block = () => BEGIN + renderFocusHost() + renderApprovalHook() + END;
 function analyze(source: string) {
@@ -27,14 +31,20 @@ function analyze(source: string) {
   const v1 = source.includes(V1_BEGIN);
   const v2 = source.includes(V2_BEGIN);
   const v3 = source.includes(V3_BEGIN);
-  const marker = v1 ? V1_BEGIN : v2 ? V2_BEGIN : v3 ? V3_BEGIN : BEGIN;
+  const v4 = source.includes(V4_BEGIN);
+  const v5 = source.includes(V5_BEGIN);
+  const marker = v1 ? V1_BEGIN : v2 ? V2_BEGIN : v3 ? V3_BEGIN : v4 ? V4_BEGIN : v5 ? V5_BEGIN : BEGIN;
   const expected = v1
     ? V1_BEGIN + renderFocusHostV1() + END
     : v2
       ? V2_BEGIN + renderFocusHost() + END
       : v3
         ? V3_BEGIN + renderFocusHost() + renderApprovalHookV3() + END
-        : block();
+        : v4
+          ? V4_BEGIN + renderFocusHost() + renderApprovalHookV4() + END
+          : v5
+            ? V5_BEGIN + renderFocusHost() + renderApprovalHookV5() + END
+            : block();
   const at = source.indexOf(marker),
     end = source.indexOf(END, at);
   if (
@@ -47,7 +57,12 @@ function analyze(source: string) {
   const original = source.slice(0, at) + source.slice(end + END.length);
   if (sha256(original) !== HOST_PROFILE.originalSha256 || original.indexOf(HOST_PROFILE.anchor) !== at)
     throw new Error("聚焦命令桥接原文摘要或位置不匹配。");
-  return { kind: "managed" as const, original, installedSettings: {}, upgradeRequired: v1 || v2 || v3 };
+  return {
+    kind: "managed" as const,
+    original,
+    installedSettings: {},
+    upgradeRequired: v1 || v2 || v3 || v4 || v5,
+  };
 }
 export const focusHostAdapter: AppAdapter = {
   id: "codebuddy-cn-focus-host",
@@ -78,6 +93,7 @@ export const focusHostAdapter: AppAdapter = {
     return original.replace(HOST_PROFILE.anchor, block() + HOST_PROFILE.anchor);
   },
   verifyPatch(source) {
+    assertSymbolExport(source, 302351, "ConversationManagerToken", "ConversationManager");
     assertSymbolExport(source, 637830, "ToolService");
     assertSymbolExport(source, 946785, "HookManager");
     assertSymbolExport(source, 155735, "HistoryService");
