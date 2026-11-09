@@ -9,6 +9,7 @@ import { featureKeybindingInstaller } from "../installers/ide-keybinding";
 import { ConfigureResourceFeature } from "./configure-resource-feature";
 import { ConfigureNativeFeature } from "./configure-native-feature";
 import { InstallApp } from "./install-app";
+import { RemoteInstallAction } from "./remote-install";
 import { ENTER_SHORTCUT, APP_INSTALL_SHORTCUT, ADD_ENTRY_SHORTCUT } from "./shortcuts";
 import {
   featureResourceEngine,
@@ -166,6 +167,7 @@ export function AppFeatures({ adapter }: { adapter: AppAdapter }) {
             icon={Icon.Download}
             target={<InstallApp adapter={adapter} onChanged={refresh} />}
           />
+          <RemoteInstallAction appId={adapter.id} />
           <Action.Push
             title="应用设置与维护"
             icon={Icon.Gear}
@@ -221,6 +223,7 @@ export function AppFeatures({ adapter }: { adapter: AppAdapter }) {
                 target={<InstallApp adapter={adapter} onChanged={refresh} />}
               />
               <RestoreAppAction adapter={adapter} onChanged={refresh} />
+              <RemoteInstallAction appId={adapter.id} />
             </ActionPanel>
           }
         />
@@ -231,6 +234,7 @@ export function AppFeatures({ adapter }: { adapter: AppAdapter }) {
           actions={
             <ActionPanel>
               <RestoreAppAction adapter={adapter} onChanged={refresh} />
+              <RemoteInstallAction appId={adapter.id} />
             </ActionPanel>
           }
         />
@@ -309,6 +313,7 @@ export function AppFeatures({ adapter }: { adapter: AppAdapter }) {
                   shortcut={APP_INSTALL_SHORTCUT}
                   target={<InstallApp adapter={adapter} onChanged={refresh} />}
                 />
+                <RemoteInstallAction appId={adapter.id} />
                 <Action.Push
                   title="应用设置与维护"
                   icon={Icon.Gear}

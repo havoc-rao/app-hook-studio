@@ -88,6 +88,20 @@ npm run install:local
 
 新增“外部工具批准”能力：通过当前用户私有 Unix Socket 查询并允许、拒绝或跳过某一轮工具确认。CLI 使用 `npm run approval -- list` 和 `npm run approval -- allow <request_id>`（也支持 `reject`、`skip`）；MCP 提供 `list_pending_approvals`、`respond_to_approval`。通知增加结构化请求 ID 和通道信息。安装、协议和验证边界见[外部工具批准说明](docs/codebuddy-approval-control.md)。
 
+## Raycast Remote / 远程安装
+
+在应用列表选中 **CodeBuddy CN**，或在它的功能列表中按 **⌘K**，选择 **Remote / 远程安装**。这是 Raycast 自带的 Action 菜单，不占用或改绑 ⌘K；本机 Install / Restore 的默认动作保持不变。
+
+1. 填写 SSH 目标（`user@host` 或 SSH Host 别名）和端口（默认 `22`，显式覆盖 SSH 配置中的 Port）。「自动查找 Python 3.9+」默认开启，通过 SSH 只读检测 PATH 和常见 Conda 路径，验证版本后执行，不安装或替换系统 Python。关闭开关后显示手动路径输入框，切换保留已填路径；旧配置首次使用新开关也默认自动模式。
+2. 在终端先完成主机指纹确认，准备好密钥或 ssh-agent。使用系统 SSH 配置和 `BatchMode=yes`，不收集密码或私钥；本机需 `python3`，远端需 Python 3.9+ 和服务端自带 Node。
+3. 设置远程新建、停止、聚焦开关与按键。它们独立于本机 Raycast 配置；编辑器/终端的 IDE 新建与聚焦绑定仍需本机安装，按键应保持一致。
+4. Enter 执行 **检测目标版本与兼容性**（只读）。通过后页面显示 App / genie 版本、服务端 commit、目标目录和解释器，⌘K 才提供 **安装远程补丁**。修改连接、Python 模式或任何快捷键配置后检测立即失效。确认安装会绑定已检测 commit，再次检查版本和资源；目标切换则拒绝写入。缺少版本、未知构建、目标不唯一或摘要不匹配时明确报错。也可查看状态、保存配置和恢复；成功结果和失败详情均可在 ⌘K 查看。
+5. 已安装或改配置时必须先 **恢复远程原文件**，再安装。安装/恢复后重新连接远程窗口，必要时重新加载窗口或重启扩展宿主。工具不结束会话，不自动重启。
+
+复用 [quickstart 远程安装器](apps/quickstart/codebuddy-hotkeys-quickstart/remote_hotkeys.py)，构建时将 Python 与受校验模板打包到 Raycast assets，不依赖源码目录。仅支持 CodeBuddy CN 1.106.1 / genie 3.10.0，服务端 commit `8e9c06cb4efccd833fc8edb84123652746908a7d` 与 `22e67e2a976382fdb01b02588226f2cfd9e24dc3`。默认根据运行进程选择实际构建，无法唯一确定时拒绝；CLI 可用 `--commit` 指定已验证构建进行离线恢复或安装。严格验证原文摘要、版本与备份，未知构建拒绝写入。仅修改远端资源，不修改本机 App，不包含本机批准通知与外部批准功能。
+
+远端备份保留在对应 `stable-<commit>/app-hook-studio-remote-backup/`。两份资源分别写入，不保证跨文件事务；失败或中断后先恢复。UI 的“完成”仅代表磁盘操作成功，不代表重启后的实际会话已验收。
+
 ## 配置与维护
 
 UI 根据 adapter 的 feature 描述分组，仅显示所选功能的字段。单项保存保留其他功能设置；所有已保存配置在 App Install 时统一应用。当前 CodeBuddy 配置为：

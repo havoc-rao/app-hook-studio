@@ -9,6 +9,7 @@ import { APP_ADAPTERS } from "./apps/registry";
 import { InstallApp } from "./ui/install-app";
 import { ENTER_SHORTCUT, APP_INSTALL_SHORTCUT, ADD_ENTRY_SHORTCUT, REFRESH_SHORTCUT } from "./ui/shortcuts";
 import { AppFeatures } from "./ui/app-features";
+import { RemoteInstallAction } from "./ui/remote-install";
 
 import { AddEntry, DraftEntries } from "./ui/add-entry";
 import { formatAppVersion } from "./ui/app-version";
@@ -22,6 +23,7 @@ export default function ManageHooks() {
       searchBarPlaceholder="选择应用…"
       actions={
         <ActionPanel>
+          <RemoteInstallAction />
           <Action.Push
             title="Add App / 新增应用"
             shortcut={ADD_ENTRY_SHORTCUT}
@@ -79,6 +81,7 @@ export default function ManageHooks() {
                 shortcut={APP_INSTALL_SHORTCUT}
                 target={<InstallApp adapter={adapter} />}
               />
+              <RemoteInstallAction appId={adapter.id} />
               <RestoreAppAction adapter={adapter} />
               <Action.Push
                 title="Add App / 新增应用"

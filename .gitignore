@@ -11,3 +11,8 @@ backups/
 assets/resource-worker.cjs
 
 assets/codex-cli/
+assets/remote-hotkeys/
+
+# Local inspection originals and Python test caches are not distributable sources.
+tmp/any3-22e67e/
+__pycache__/

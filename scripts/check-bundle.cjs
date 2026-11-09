@@ -66,6 +66,24 @@ for (const item of items.filter((entry) => entry.props.icon?.fileIcon)) {
     "Cmd+Enter must not open the view-more destination",
   );
 }
+const codebuddy = items.find((entry) => entry.props.title === "CodeBuddy CN");
+assert.ok(codebuddy, "CodeBuddy entry missing");
+const remoteAction = projectRequire("react")
+  .Children.toArray(codebuddy.props.actions.props.children)
+  .find((entry) => entry.props.appId === "codebuddy-cn");
+assert.ok(remoteAction, "CodeBuddy must expose the remote action in Cmd+K");
+const remoteElement = remoteAction.type(remoteAction.props);
+assert.equal(remoteElement.props.title, "Remote / 远程安装");
+assert.ok(remoteElement.props.target, "Remote action must open its configuration form");
+assert.equal(
+  remoteAction.type({ appId: "unsupported-app" }),
+  null,
+  "Do not offer CodeBuddy remote patches for other apps",
+);
+const remoteRoot = path.join(api.environment.assetsPath, "remote-hotkeys");
+for (const file of ["remote_hotkeys.py", "hotkeys.py", "runtime/manifest.json"]) {
+  assert.ok(fs.existsSync(path.join(remoteRoot, file)), `Packaged remote installer missing: ${file}`);
+}
 const workerFile = path.join(api.environment.assetsPath, "resource-worker.cjs");
 assert.ok(fs.existsSync(workerFile), "Packaged resource worker missing");
 const health = JSON.parse(
