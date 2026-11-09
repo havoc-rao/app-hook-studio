@@ -198,11 +198,14 @@ scripts/cli.ts                  与 Raycast UI 共用同一引擎
 
 安装过程修改磁盘上的 Webview JavaScript；应用重新打开后正常加载。运行时监听发生在应用自己的 Webview 内，无需 Raycast 常驻、系统全局键盘监听、坐标点击、调试端口或 dylib 注入。
 
-当前 CodeBuddy 资源为：
+当前 Raycast / MCP 内置适配器支持两份已核验构建（两者均自报 `1.106.1 / genie 3.10.0`）：
 
-```text
-Contents/Resources/app/extensions/genie/out/webviews/main.942dbf9a.chunk.js
-```
+| 构建                | Webview 入口             | Webview SHA-256 前缀 | 宿主 SHA-256 前缀 |
+| ------------------- | ------------------------ | -------------------- | ----------------- |
+| 原构建              | `main.942dbf9a.chunk.js` | `ee829469`           | `f99b6e1e`        |
+| 2026-11-09 本机更新 | `main.4e7322ea.chunk.js` | `1100a2cb`           | `3d269f16`        |
+
+入口均在 `Contents/Resources/app/extensions/genie/out/webviews/` 下。安装器按唯一已知入口选择 profile，再校验完整原文摘要；未知或同时出现两个已知入口时拒绝安装，不通过通配符接受未知构建。新版输入组件的停止回调、流式状态、编辑模式、容器和编辑器 ref 均已重新绑定；宿主服务模块与锚点未变。调查及验证范围见 [更新记录](docs/codebuddy-update-2026-11-09.md)。独立 quickstart 包仍只支持原构建，本次未更新它。
 
 模块 ID、压缩变量名和插入锚点仅属于已分析构建。应用更新后需要重新分析，不能简单放宽摘要校验。
 

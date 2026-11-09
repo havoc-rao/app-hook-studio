@@ -10,3 +10,14 @@ export const PROFILE = {
   legacyEnd: "},[Ne,le,Ce,Ae]);\n",
   anchor: "const{setNavigationAllowed:Tn,navigateToInputContextLast:In}=",
 } as const;
+
+// Same advertised versions, different shipped bytes and ChatInput lexical bindings.
+export const UPDATED_PROFILE = {
+  ...PROFILE,
+  id: "codebuddy-cn-genie-3.10.0-1100a2cb",
+  bundleRelativePath: "Contents/Resources/app/extensions/genie/out/webviews/main.4e7322ea.chunk.js",
+  originalSha256: "1100a2cbddd023c284b90b2b450e725301575ba6bdb3c6498649127c7888f702",
+  anchor: "const{setNavigationAllowed:On,navigateToInputContextLast:xn}=",
+} as const;
+export const WEBVIEW_PROFILES = [UPDATED_PROFILE, PROFILE] as const;
+export type WebviewProfile = (typeof WEBVIEW_PROFILES)[number];

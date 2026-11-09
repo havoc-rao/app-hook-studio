@@ -8,7 +8,9 @@ import { renderFocusHostV1 } from "./focus-host-runtime-v1";
 import { Script } from "node:vm";
 import { AppAdapter } from "../../core/contracts";
 import { sha256 } from "../../core/hash";
-import { PROFILE } from "./profile";
+import { PROFILE, UPDATED_PROFILE } from "./profile";
+import { readdir } from "node:fs/promises";
+import path from "node:path";
 import { readCodebuddyVersion } from "./version";
 import { renderFocusHost } from "./focus-host-runtime";
 export { FOCUS_COMMAND } from "./focus-protocol";
@@ -18,6 +20,12 @@ export const HOST_PROFILE = {
   originalSha256: "f99b6e1e25e62b442bc7335b67e859f80c3b6d6a1c51d31cfb52591c578aa42e",
   anchor: "}async function doActivate(ir,ar){",
 };
+export const UPDATED_HOST_PROFILE = {
+  ...HOST_PROFILE,
+  id: "codebuddy-cn-focus-host-genie-3-10-0-3d269f16",
+  originalSha256: "3d269f1683a8547045a1fd383c8a565b78f1b05604b28831b8184824c1291ecc",
+};
+const HOST_PROFILES = [HOST_PROFILE, UPDATED_HOST_PROFILE];
 const V1_BEGIN = "/* APP_HOOK_STUDIO_FOCUS_HOST v1 */\n";
 const V2_BEGIN = "/* APP_HOOK_STUDIO_FOCUS_HOST v2 */\n";
 const V3_BEGIN = "/* APP_HOOK_STUDIO_FOCUS_HOST v3 */\n";
@@ -27,7 +35,9 @@ const BEGIN = "/* APP_HOOK_STUDIO_FOCUS_HOST v6 */\n",
   END = "/* APP_HOOK_STUDIO_FOCUS_HOST_END */\n";
 const block = () => BEGIN + renderFocusHost() + renderApprovalHook() + END;
 function analyze(source: string) {
-  if (sha256(source) === HOST_PROFILE.originalSha256) return { kind: "original" as const, original: source };
+  const digest = sha256(source);
+  if (HOST_PROFILES.some((profile) => digest === profile.originalSha256))
+    return { kind: "original" as const, original: source };
   const v1 = source.includes(V1_BEGIN);
   const v2 = source.includes(V2_BEGIN);
   const v3 = source.includes(V3_BEGIN);
@@ -55,7 +65,10 @@ function analyze(source: string) {
   )
     throw new Error("聚焦命令桥接资源未知或被修改，拒绝覆盖。");
   const original = source.slice(0, at) + source.slice(end + END.length);
-  if (sha256(original) !== HOST_PROFILE.originalSha256 || original.indexOf(HOST_PROFILE.anchor) !== at)
+  if (
+    !HOST_PROFILES.some((profile) => sha256(original) === profile.originalSha256) ||
+    original.indexOf(HOST_PROFILE.anchor) !== at
+  )
     throw new Error("聚焦命令桥接原文摘要或位置不匹配。");
   return {
     kind: "managed" as const,
@@ -84,11 +97,21 @@ export const focusHostAdapter: AppAdapter = {
     const version = await readCodebuddyVersion(appPath);
     if (version.app !== PROFILE.appVersion || version.components.genie !== PROFILE.extensionVersion)
       throw new Error("聚焦桥接不支持当前 App / genie 版本。");
-    return { ...HOST_PROFILE, label: `CodeBuddy ${version.app} / genie ${version.components.genie}` };
+    const files = await readdir(path.join(appPath, "Contents/Resources/app/extensions/genie/out/webviews"));
+    const old = files.includes(path.basename(PROFILE.bundleRelativePath));
+    const updated = files.includes(path.basename(UPDATED_PROFILE.bundleRelativePath));
+    if (old === updated) throw new Error("CodeBuddy 资源构建未知或存在多个已知入口，拒绝安装桥接。");
+    return {
+      ...(updated ? UPDATED_HOST_PROFILE : HOST_PROFILE),
+      label: `CodeBuddy ${version.app} / genie ${version.components.genie}`,
+    };
   },
   analyze,
   patch(original) {
-    if (sha256(original) !== HOST_PROFILE.originalSha256 || original.split(HOST_PROFILE.anchor).length !== 2)
+    if (
+      !HOST_PROFILES.some((profile) => sha256(original) === profile.originalSha256) ||
+      original.split(HOST_PROFILE.anchor).length !== 2
+    )
       throw new Error("聚焦命令桥接源文或锚点不匹配。");
     return original.replace(HOST_PROFILE.anchor, block() + HOST_PROFILE.anchor);
   },

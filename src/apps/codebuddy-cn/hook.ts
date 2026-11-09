@@ -3,12 +3,34 @@ import { renderFocusReceiver } from "./focus-receiver";
 import { DEFAULT_SETTINGS, CodeBuddySettings, validateSettings } from "./settings";
 import { parseShortcut } from "../../core/shortcuts";
 import { sha256 } from "../../core/hash";
-import { PROFILE } from "./profile";
+import { PROFILE, UPDATED_PROFILE, WEBVIEW_PROFILES, WebviewProfile } from "./profile";
+import { tokenizer } from "acorn";
 
 export const BEGIN = "/* APP_HOOK_STUDIO_BEGIN v2 codebuddy-cn ";
 export const END = "/* APP_HOOK_STUDIO_END */\n";
 
-export function renderHook(value: CodeBuddySettings): string {
+/** Rename identifier tokens only; strings, comments and encoded metadata stay byte-exact. */
+function bindUpdatedHook(source: string): string {
+  const names: Record<string, string> = { Ce: "ye", le: "se", Ne: "Le", Re: "Ae", Ae: "je", Ue: "Ve" };
+  const tokens = tokenizer(source, { ecmaVersion: "latest" });
+  let result = "",
+    previous = 0;
+  for (const token of tokens) {
+    const name = source.slice(token.start, token.end);
+    if (token.type.label === "name" && names[name]) {
+      result += source.slice(previous, token.start) + names[name];
+      previous = token.end;
+    }
+  }
+  return result + source.slice(previous);
+}
+
+export function renderHook(value: CodeBuddySettings, profile: WebviewProfile = PROFILE): string {
+  const source = renderOriginalHook(value);
+  return profile.id === UPDATED_PROFILE.id ? bindUpdatedHook(source) : source;
+}
+
+function renderOriginalHook(value: CodeBuddySettings): string {
   const config = validateSettings(value);
   const runtime = {
     newChat: config.newChatEnabled ? parseShortcut(config.newChatShortcut) : null,
@@ -83,7 +105,8 @@ export type BundleAnalysis = {
 /** Accept exact supported bytes, or a reproducible patch over those exact bytes. */
 export function analyzeBundle(source: string): BundleAnalysis {
   const digest = sha256(source);
-  if (digest === PROFILE.originalSha256) return { kind: "original", original: source };
+  if (WEBVIEW_PROFILES.some((profile) => digest === profile.originalSha256))
+    return { kind: "original", original: source };
   if (digest === PROFILE.legacySha256) {
     const start = source.indexOf(PROFILE.legacyStart);
     const end = source.indexOf(PROFILE.legacyEnd, start) + PROFILE.legacyEnd.length;
@@ -104,18 +127,24 @@ export function analyzeBundle(source: string): BundleAnalysis {
   const header = /^\/\* APP_HOOK_STUDIO_BEGIN v[12] codebuddy-cn ([A-Za-z0-9+/=]+) \*\/\n/.exec(block);
   if (!header) throw new Error("补丁元数据格式异常，拒绝修改。");
   const config = validateSettings(JSON.parse(Buffer.from(header[1], "base64").toString("utf8")));
-  if ((v1 ? renderHookV1(config) : renderHook(config)) !== block)
-    throw new Error("补丁内容与配置不一致，拒绝覆盖未知改动。");
   const original = source.slice(0, start) + source.slice(end);
-  if (sha256(original) !== PROFILE.originalSha256 || original.indexOf(PROFILE.anchor) !== start) {
+  const profile = WEBVIEW_PROFILES.find((candidate) => candidate.originalSha256 === sha256(original));
+  if (
+    !profile ||
+    (v1 && profile.id !== PROFILE.id) ||
+    (v1 ? renderHookV1(config) : renderHook(config, profile)) !== block
+  )
+    throw new Error("补丁内容与配置不一致或原始源码摘要不匹配，拒绝覆盖未知改动。");
+  if (original.indexOf(profile.anchor) !== start) {
     throw new Error("补丁位置或原始源码摘要不匹配，拒绝修改。");
   }
   return { kind: "managed", original, installedSettings: config, upgradeRequired: v1 };
 }
 
 export function patchBundle(original: string, config: CodeBuddySettings): string {
-  if (sha256(original) !== PROFILE.originalSha256 || original.split(PROFILE.anchor).length !== 2) {
+  const profile = WEBVIEW_PROFILES.find((candidate) => candidate.originalSha256 === sha256(original));
+  if (!profile || original.split(profile.anchor).length !== 2) {
     throw new Error("原始源码或注入位置不匹配。");
   }
-  return original.replace(PROFILE.anchor, renderHook(config) + PROFILE.anchor);
+  return original.replace(profile.anchor, renderHook(config, profile) + profile.anchor);
 }

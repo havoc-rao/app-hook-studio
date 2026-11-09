@@ -5,7 +5,8 @@ import path from "node:path";
 import { AppAdapter } from "../../core/contracts";
 import { DEFAULT_SETTINGS, validateSettings } from "./settings";
 import { analyzeBundle, patchBundle } from "./hook";
-import { PROFILE } from "./profile";
+import { PROFILE, WEBVIEW_PROFILES } from "./profile";
+import { readdir } from "node:fs/promises";
 import { focusHostAdapter } from "./focus-host";
 import { FOCUS_FEATURE } from "./focus-keybinding";
 
@@ -137,11 +138,20 @@ export const codebuddyAdapter: AppAdapter = {
         `尚不支持 CodeBuddy ${String(appVersion)} / genie ${String(extensionVersion)}。${this.supportDescription}`,
       );
     }
+    const files = await readdir(path.join(appPath, "Contents/Resources/app/extensions/genie/out/webviews"));
+    const matches = WEBVIEW_PROFILES.filter((candidate) =>
+      files.includes(path.basename(candidate.bundleRelativePath)),
+    );
+    if (matches.length !== 1)
+      throw new Error(
+        "CodeBuddy 聊天资源构建未知或存在多个已知入口。应用可能已更新，请重新分析构建；未修改任何文件。",
+      );
+    const profile = matches[0];
     return {
-      id: PROFILE.id,
-      label: `CodeBuddy ${PROFILE.appVersion} / genie ${PROFILE.extensionVersion}`,
-      artifactRelativePath: PROFILE.bundleRelativePath,
-      originalSha256: PROFILE.originalSha256,
+      id: profile.id,
+      label: `CodeBuddy ${profile.appVersion} / genie ${profile.extensionVersion} · ${profile.originalSha256.slice(0, 8)}`,
+      artifactRelativePath: profile.bundleRelativePath,
+      originalSha256: profile.originalSha256,
     };
   },
   analyze: (source) => analyzeBundle(source),
