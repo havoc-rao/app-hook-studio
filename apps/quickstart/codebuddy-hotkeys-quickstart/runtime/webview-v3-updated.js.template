@@ -1,0 +1,74 @@
+/* APP_HOOK_STUDIO_BEGIN v3 codebuddy-cn {{AHS_METADATA}} */
+const cbHotkeysState=(0,m.useRef)({lastEscape:null,cancel:ye,streaming:se,busy:false});
+cbHotkeysState.current.cancel=ye;
+cbHotkeysState.current.streaming=se;
+if(!se)cbHotkeysState.current.lastEscape=null;
+(0,m.useEffect)(()=>{
+  if(Le)return;
+  const input=Ae.current;
+  const panel=input&&je(input);
+  const config={{AHS_RUNTIME}};
+  const root=config.scope==="input"?input:panel;
+  if(!input||!root)return;
+  const state=cbHotkeysState.current;
+  const reset=()=>{state.lastEscape=null;};
+  const matches=(event,key)=>key&&event.code===key.code&&event.ctrlKey===key.ctrl&&
+    event.metaKey===key.meta&&event.altKey===key.alt&&event.shiftKey===key.shift;
+  const handle=event=>{
+    if(event.defaultPrevented||event.isComposing||!input.getClientRects().length){reset();return;}
+    if(!(event.target instanceof Node)||!root.contains(event.target)){reset();return;}
+    if(event.repeat)return;
+    const newChat=matches(event,config.newChat);
+    let stop=false;
+    if(config.stopMode==="double-escape"&&event.key==="Escape"&&
+       !event.ctrlKey&&!event.metaKey&&!event.altKey&&!event.shiftKey&&
+       state.streaming&&typeof state.cancel==="function"){
+      const now=performance.now(),previous=state.lastEscape;
+      stop=previous!==null&&now-previous>=0&&now-previous<=config.doubleEscapeMs;
+      state.lastEscape=stop?null:now;
+    }else{
+      reset();
+      stop=config.stopMode==="shortcut"&&matches(event,config.stop)&&
+        state.streaming&&typeof state.cancel==="function";
+    }
+    if(!newChat&&!stop)return;
+    event.preventDefault();event.stopImmediatePropagation();
+    if(state.busy)return;
+    state.busy=true;
+    Promise.resolve().then(()=>newChat
+      ?cbHotkeysRequire("wGu3").ContainerUtil.get(cbHotkeysRequire("vFXG").NewChatViewServie).startNewChat()
+      :state.cancel()).catch(error=>console.error("[App Hook Studio: codebuddy-cn]",error))
+      .finally(()=>{state.busy=false;});
+  };
+  root.addEventListener("keydown",handle);
+  root.addEventListener("focusout",reset);
+  window.addEventListener("blur",reset);
+  return()=>{
+    root.removeEventListener("keydown",handle);
+    root.removeEventListener("focusout",reset);
+    window.removeEventListener("blur",reset);
+    reset();
+  };
+},[Le,je]);
+(0,m.useEffect)(()=>{
+  if(Le)return;
+  const timers=new Set();
+  const handle=event=>{
+    const message=event.data;
+    if(!message||message.type!=="app-hook-studio:codebuddy:focus-input"||typeof message.requestId!=="string")return;
+    const input=Ae.current,editor=Ve.current;
+    if(!input||!input.getClientRects().length||!editor||typeof editor.focus!=="function")return;
+    editor.focus();
+    const timer=setTimeout(()=>{
+      timers.delete(timer);
+      const active=document.activeElement;
+      const focused=!!(active&&input.contains(active)&&(active.isContentEditable||active.tagName==="TEXTAREA"||active.tagName==="INPUT"));
+      const bridge=window.vs||window.vscode;
+      if(bridge&&typeof bridge.postMessage==="function")bridge.postMessage({type:"app-hook-studio:codebuddy:focus-input-result",requestId:message.requestId,focused});
+    },0);
+    timers.add(timer);
+  };
+  window.addEventListener("message",handle);
+  return()=>{window.removeEventListener("message",handle);for(const timer of timers)clearTimeout(timer);timers.clear();};
+},[Le]);
+/* APP_HOOK_STUDIO_END */

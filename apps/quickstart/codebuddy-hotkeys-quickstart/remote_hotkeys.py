@@ -3,6 +3,7 @@
 import argparse
 import base64
 import json
+import re
 from pathlib import Path
 import subprocess
 
@@ -10,6 +11,19 @@ import hotkeys as h
 
 COMMIT = "8e9c06cb4efccd833fc8edb84123652746908a7d"
 HOST_SHA256 = "17595b239ec1ac1e54d2a3bc726745fc8d9c24a49fe1361414c3dccdd3acc919"
+
+# Exact verified builds; same advertised version does not imply identical resources.
+BUILDS = {
+    COMMIT: {"hostHash": HOST_SHA256, "webview": "main.942dbf9a.chunk.js"},
+    "22e67e2a976382fdb01b02588226f2cfd9e24dc3": {
+        "hostHash": "7a362fea9097bea1719a631a21126314f0218660e43a9df40b9f30cb9bd2810a",
+        "webview": "main.4e7322ea.chunk.js",
+        "webviewHash": "1100a2cbddd023c284b90b2b450e725301575ba6bdb3c6498649127c7888f702",
+        "anchor": "const{setNavigationAllowed:On,navigateToInputContextLast:xn}=",
+        "requireAnchor": "n.ChatInput=(0,m.memo)((0,m.forwardRef)(function ChatInput(e1,n){",
+        "template": "webview-v3-updated.js.template",
+    },
+}
 
 # Sent over SSH stdin; no persistent helper or credential files are installed.
 WORKER = r'''
@@ -22,27 +36,81 @@ module = {"__name__": "remote_hotkeys_library", "__file__": "/unused/hotkeys.py"
 exec(compile(base64.b64decode(payload["library"]), "hotkeys.py", "exec"), module)
 from types import SimpleNamespace
 h = SimpleNamespace(**module)
-base = (Path.home() / ".codebuddy-server-cn/bin" / ("stable-" + payload["commit"])).resolve()
-product = json.loads((base / "product.json").read_text())
-package = json.loads((base / "package.json").read_text())
-extension = json.loads((base / "extensions/genie/package.json").read_text())
+root = (Path.home() / ".codebuddy-server-cn/bin").resolve()
+def select_build():
+    # Re-scan both directories and processes on every call: a server update can
+    # happen while waiting for the installation lock.
+    build_paths = {str(build / entry): build.name.removeprefix('stable-') for build in root.glob('stable-*') for entry in ('out/server-main.js', 'out/bootstrap-fork')}
+    active = set()
+    for proc in (Path('/proc').iterdir() if Path('/proc').is_dir() else []):
+        if not proc.name.isdigit():
+            continue
+        try:
+            for arg in (proc / 'cmdline').read_bytes().split(b'\0'):
+                text = arg.decode(errors='replace')
+                if text in build_paths:
+                    active.add(build_paths[text])
+        except OSError:
+            pass
+    requested = payload.get('commit', 'auto')
+    # A pinned verification must always refer to the actual running build;
+    # --commit remains available only for unpinned offline recovery.
+    if requested == 'auto' or payload.get('expectedCommit') is not None:
+        if len(active) != 1:
+            raise ValueError('Cannot select active server build unambiguously; use --commit for unpinned offline recovery. Active: ' + repr(sorted(active)) + '; no writes')
+        requested = next(iter(active))
+    return requested
+
+def version_info(commit):
+    base = (root / ('stable-' + commit)).resolve()
+    values = {}
+    for key, filename, field in (('commit', 'product.json', 'commit'), ('appVersion', 'package.json', 'version'), ('extensionVersion', 'extensions/genie/package.json', 'version')):
+        try:
+            value = json.loads((base / filename).read_text()).get(field)
+            values[key] = value if isinstance(value, str) and value.strip() else '<missing>'
+        except (OSError, ValueError, AttributeError):
+            values[key] = '<missing>'
+    return {**values, 'base': str(base)}
+
+requested = select_build()
+target = version_info(requested)
+profiles = payload.get('builds', {payload.get('commit'): {'hostHash': payload.get('hostHash'), 'webview': 'main.942dbf9a.chunk.js'}})
 manifest = payload["manifest"]
-if product.get("commit") != payload["commit"] or package.get("version") != manifest["appVersion"] or extension.get("version") != manifest["extensionVersion"]:
-    raise ValueError("Remote build/version mismatch; no writes")
-manifest["host"]["originalSha256"] = payload["hostHash"]
+
+def verify_build():
+    selected = select_build()
+    actual = version_info(selected)
+    detail = 'selectedCommit=' + str(selected) + '; ' + json.dumps(actual, ensure_ascii=False)
+    if selected not in profiles:
+        raise ValueError('Unsupported active remote commit; ' + detail + '; no writes')
+    expected = payload.get('expectedCommit')
+    if expected is not None and (not isinstance(expected, str) or len(expected) != 40 or any(c not in '0123456789abcdefABCDEF' for c in expected) or selected.lower() != expected.lower()):
+        raise ValueError('Remote expected commit mismatch: expectedCommit=' + str(expected) + '; ' + detail + '; no writes')
+    if selected != requested or actual != target or actual['commit'] != selected or actual['appVersion'] != manifest['appVersion'] or actual['extensionVersion'] != manifest['extensionVersion']:
+        raise ValueError('Remote build/version mismatch; expected appVersion=' + manifest['appVersion'] + ', extensionVersion=' + manifest['extensionVersion'] + '; ' + detail + '; no writes')
+
+verify_build()
+profile = profiles[requested]
+base = Path(target['base'])
+manifest["host"]["originalSha256"] = profile["hostHash"]
+if 'webviewHash' in profile:
+    manifest['webview'].update({'sha256': profile['webviewHash'], 'anchor': profile['anchor'], 'requireAnchor': profile['requireAnchor']})
 runtime = {}
 for name, value in payload["runtime"].items():
     data = base64.b64decode(value, validate=True)
     if h.digest(data) != manifest["files"][name]:
         raise ValueError("Runtime template hash mismatch")
     runtime[name] = data.decode()
+if profile.get('template'):
+    runtime['webview-v3.js.template'] = runtime[profile['template']]
 directory = base / "app-hook-studio-remote-backup"
-paths = {"host": base / "extensions/genie/out/extension/index.js", "webview": base / "extensions/genie/out/webviews/main.942dbf9a.chunk.js"}
+paths = {"host": base / "extensions/genie/out/extension/index.js", "webview": base / 'extensions/genie/out/webviews' / profile['webview']}
 for path in paths.values():
     if not path.resolve().is_relative_to(base):
         raise ValueError("Resource escaped server directory")
 
 def plan():
+    verify_build()
     raw = h.optional_read(directory / "state.json")
     state = json.loads(raw) if raw is not None else None
     if state is not None and (state.get("schema") != 1 or state.get("base") != str(base) or set(state.get("targets", {})) != set(paths)):
@@ -84,8 +152,10 @@ state, targets = plan()
 if payload["command"] == "apply":
     h.require_original_installation(state, targets, directory)
 if payload["command"] in ("apply", "restore"):
+    verify_build()
     with h.lock(directory):
         state, targets = plan()
+        verify_build()
         if payload["command"] == "apply":
             h.require_original_installation(state, targets, directory)
         if state is None:
@@ -108,7 +178,7 @@ if payload["command"] in ("apply", "restore"):
                 h.commit(target["path"], h.digest(target["current"]), target["candidate"])
         state["phase"] = "restored" if payload["command"] == "restore" else "applied"
         h.atomic_write(directory / "state.json", (h.encoded(state) + "\n").encode())
-print(json.dumps({"ok": True, "command": payload["command"], "base": str(base), "backupDirectory": str(directory), "phase": state.get("phase") if state else None, "targets": {name: {"kind": target["kind"], "changed": target["candidate"] != target["current"], "currentSha256": h.digest(target["current"]), "candidateSha256": h.digest(target["candidate"])} for name, target in targets.items()}}, ensure_ascii=False, indent=2))
+print(json.dumps({"ok": True, "command": payload["command"], **({'target': target, 'checksPassed': True} if payload['command'] == 'preflight' else {}), "base": str(base), "backupDirectory": str(directory), "phase": state.get("phase") if state else None, "targets": {name: {"kind": target["kind"], "changed": target["candidate"] != target["current"], "currentSha256": h.digest(target["current"]), "candidateSha256": h.digest(target["candidate"])} for name, target in targets.items()}}, ensure_ascii=False, indent=2))
 '''
 
 
@@ -134,10 +204,14 @@ def main():
     parser.add_argument("--port", type=int, default=22)
     parser.add_argument("--python", default="python3", help="Remote Python 3.9+ executable")
     parser.add_argument("--config", type=Path, help="Shared config.example.json or legacy chat runtime settings")
+    parser.add_argument("--commit", default="auto", choices=["auto", *BUILDS], help="Default: detect the active server build; explicit commit for offline recovery")
+    parser.add_argument("--expected-commit", help="Require the actual active build to match this verified 40-digit commit")
     args = parser.parse_args()
+    if args.expected_commit is not None and not re.fullmatch(r"[0-9a-fA-F]{40}", args.expected_commit):
+        parser.error("--expected-commit must be exactly 40 hexadecimal characters")
     manifest, runtime = h.runtime_files()
     config, focus_enabled = load_config(args.config)
-    payload = {"command": args.command, "commit": COMMIT, "hostHash": HOST_SHA256, "manifest": manifest, "config": config, "focusEnabled": focus_enabled, "library": base64.b64encode((h.ROOT / "hotkeys.py").read_bytes()).decode(), "runtime": {name: base64.b64encode(data.encode()).decode() for name, data in runtime.items()}}
+    payload = {"command": args.command, "commit": args.commit, "expectedCommit": args.expected_commit, "builds": BUILDS, "manifest": manifest, "config": config, "focusEnabled": focus_enabled, "library": base64.b64encode((h.ROOT / "hotkeys.py").read_bytes()).decode(), "runtime": {name: base64.b64encode(data.encode()).decode() for name, data in runtime.items()}}
     # Only constant Python code is in the shell command; all configuration uses stdin.
     bootstrap = "import base64;exec(base64.b64decode(" + repr(base64.b64encode(WORKER.encode()).decode()) + "))"
     import shlex

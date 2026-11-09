@@ -46,7 +46,7 @@ python3 remote_hotkeys.py restore --host user@example.com --port 36000
 
 ## 遇到版本、摘要或远程差异
 
-当前本机支持 CodeBuddy 1.106.1 / genie 3.10.0；远程只支持 `remote_hotkeys.py` 中 `COMMIT` 对应的已验证构建。`HOST_SHA256` 是远程原始宿主文件摘要，不是机器标识。
+当前本机支持 CodeBuddy 1.106.1 / genie 3.10.0；远程仅支持 `remote_hotkeys.py` 中 `BUILDS` 的已验证构建。默认根据运行进程选择实际构建；不根据目录存在选择旧 commit，离线安装/恢复用 `--commit` 明确指定。`HOST_SHA256` 是旧构建远程原始宿主摘要，不是机器标识。any3 安装错构建的证据与修复见仓库 `docs/any3-remote-install-2026-11-09.md`。
 
 1. 先只读检查：App/扩展版本、服务端 `product.json` commit、两份 JS 的 SHA-256、当前安装状态。
 2. 远程可并存多个 `stable-*`；通过实际 `server-main.js`、`bootstrap-fork --type=extensionHost` 进程路径及最新日志确定当前构建。目录存在不代表正在运行；没有进程也不代表未安装。

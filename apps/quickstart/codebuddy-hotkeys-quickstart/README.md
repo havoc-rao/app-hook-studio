@@ -199,7 +199,9 @@ v3 在 ChatInput 外通过带标记的代码块保存 `cbHotkeysRequire`，新�
 ## Remote SSH 资源补丁
 
 `remote_hotkeys.py` 从本机通过 SSH 标准输入执行临时 Python 工作代码，不在远端安装辅助程序。
-目前只支持服务端 commit `8e9c06cb4efccd833fc8edb84123652746908a7d`、CodeBuddy 1.106.1 / genie 3.10.0。
+目前支持服务端 commit `8e9c06cb4efccd833fc8edb84123652746908a7d` 和 `22e67e2a976382fdb01b02588226f2cfd9e24dc3`、CodeBuddy 1.106.1 / genie 3.10.0。默认根据 `/proc` 中服务端进程的完整参数选择实际运行构建；没有进程、多个构建并存运行或未知 commit 时拒绝猜测，可用 `--commit <已验证commit>` 显式指定离线安装/恢复目标。新构建单独校验宿主和 Webview SHA-256，使用独立词法绑定模板，不因版本号相同而复用旧原文。
+Raycast 界面将只读 `preflight` 作为强制前置步骤，成功输出包含 `checksPassed:true` 和 `target`（App / genie 版本、commit、目录）。未通过前不显示安装；修改配置后失效。`--expected-commit <检测到的commit>` 将后续操作绑定实际运行构建，并在安装锁内重新检查版本，目标切换即停止；不能用离线 `--commit` 绕过此绑定。
+
 它单独校验远程宿主原文摘要 `17595b239ec1ac1e54d2a3bc726745fc8d9c24a49fe1361414c3dccdd3acc919`，不放宽本机 profile。
 
 ```sh

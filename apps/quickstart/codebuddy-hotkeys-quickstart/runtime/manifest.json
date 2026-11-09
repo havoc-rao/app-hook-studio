@@ -26,6 +26,7 @@
     "webview-v2.js.template": "0dd760b4dc54c392cd573e0dbb85af0ff5caaaaaf45c50572e512ca7cc5ab457",
     "focus-host-v2.js": "de51d3f7c7f498af68d99b1c7675933fc38c57f78c029e38f1cb4aaafb1a598c",
     "webview-v3.js.template": "0a8dc6675321d5d38ab7ec183d11040b61052c4006875c9af5d358318d29b1ad",
+    "webview-v3-updated.js.template": "a117d4a77ba4dad75d44f4414cb2abb195ec23ebacf56718102bfcba8c09d86e",
     "webview-require-v3.js": "29a6ab6f67710437c9880e3d3cdbc93f3715f6d75f6cf1acc4b5d34b4972a4e7"
   },
   "referenceVectors": [
