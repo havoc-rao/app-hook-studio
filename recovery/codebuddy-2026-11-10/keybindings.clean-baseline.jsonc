@@ -1,0 +1,71 @@
+// 将键绑定放在此文件中以覆盖默认值
+[
+  {
+    "key": "ctrl+cmd+n",
+    "command": "tencentcloud.codingcopilot.chat.startNewChat",
+    "when": "codingcopilot.authenticated && view == 'coding-copilot.webviews.chat'"
+  },
+  {
+    "key": "shift+cmd+j",
+    "command": "workbench.action.toggleMaximizedPanel",
+    "when": "panelAlignment == 'center' || panelPosition != 'bottom' && panelPosition != 'top'"
+  },
+  {
+    "key": "alt+cmd+b",
+    "command": "workbench.action.toggleAuxiliaryBar"
+  },
+  {
+    "key": "shift+cmd+v",
+    "command": "-workbench.action.toggleAuxiliaryBar"
+  },
+  {
+    "key": "shift+cmd+k",
+    "command": "bookmarks.toggle",
+    "when": "editorTextFocus"
+  },
+  {
+    "key": "alt+cmd+k",
+    "command": "-bookmarks.toggle",
+    "when": "editorTextFocus"
+  },
+  {
+    "key": "ctrl+cmd+k",
+    "command": "claude-code.insertAtMentioned",
+    "when": "editorTextFocus"
+  },
+  {
+    "key": "alt+cmd+k",
+    "command": "-claude-code.insertAtMentioned",
+    "when": "editorTextFocus"
+  },
+  {
+    "key": "ctrl+[Backquote]",
+    "command": "workbench.action.terminal.toggleTerminal",
+    "when": "terminal.active"
+  },
+  {
+    "key": "ctrl+shift+cmd+k",
+    "command": "opencodeConnector.addToPrompt",
+    "when": "editorTextFocus"
+  },
+  {
+    "key": "shift+cmd+a",
+    "command": "-opencodeConnector.addToPrompt",
+    "when": "editorTextFocus"
+  },
+  {
+    "key": "ctrl+cmd+h",
+    "command": "tencentcloud.codingcopilot.chatHistory",
+    "when": "codingcopilot.authenticated && view == 'coding-copilot.webviews.chat'"
+  },
+  {
+    "key": "ctrl+cmd+k",
+    "command": "copy-code-path-ref.copyReference",
+    "when": "editorTextFocus"
+  },
+  {
+    "key": "alt+cmd+c",
+    "command": "-copy-code-path-ref.copyReference",
+    "when": "editorTextFocus"
+}
+]

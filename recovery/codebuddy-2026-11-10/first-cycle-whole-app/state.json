@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "appPath": "/Applications/CodeBuddy CN.app",
+  "phase": "restored",
+  "entries": [
+    {
+      "target": "/Applications/CodeBuddy CN.app/Contents/Resources/app/extensions/genie/out/webviews/main.4e7322ea.chunk.js",
+      "title": "App 资源补丁",
+      "after": "6621752af3e01167166589ac4a4fa79ca0900d178612cefce6c9514496a050da",
+      "before": "1100a2cbddd023c284b90b2b450e725301575ba6bdb3c6498649127c7888f702",
+      "mode": 420,
+      "backup": "0.before"
+    },
+    {
+      "target": "/Applications/CodeBuddy CN.app/Contents/Resources/app/extensions/genie/out/extension/index.js",
+      "title": "CodeBuddy 聚焦与工具批准桥接",
+      "after": "035c4e25b14c6ab959e3e9c3669abc88ce36fb64c000e545150839dba73cb8a4",
+      "before": "3d269f1683a8547045a1fd383c8a565b78f1b05604b28831b8184824c1291ecc",
+      "mode": 420,
+      "backup": "1.before"
+    },
+    {
+      "target": "/Users/havocrao/Library/Application Support/CodeBuddy CN/User/keybindings.json",
+      "title": "聚焦输入框",
+      "after": "3f91d241f89de2edfee1b582051fd4677d015611bc3edb1716904d697b3c0bc7",
+      "before": "6d5071399ce3832bd67bc7dca0744deb3b30e92f7b40f9dafac452069c80911b",
+      "mode": 420,
+      "backup": "2.before"
+    }
+  ]
+}
