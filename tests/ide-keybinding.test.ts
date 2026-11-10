@@ -121,6 +121,46 @@ test("legacy snapshot ownership migrates before changing a shortcut", async (t) 
   assert.deepEqual(parse(await fs.readFile(target, "utf8")), parse(source));
 });
 
+test("missing legacy backups explain recovery and never mutate shortcut files or records", async (t) => {
+  for (const schema of [1, 2]) {
+    const root = await fs.mkdtemp(path.join(tmpdir(), "app-hook-missing-keybinding-backup-"));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const target = path.join(root, "keybindings.json");
+    const data = path.join(root, "state");
+    const manager = new IdeKeybindingInstaller(target, data, FOCUS_INPUT_BINDING);
+    await fs.writeFile(target, source);
+    const installed = schema === 1 ? appendBinding(source, FOCUS_INPUT_BINDING) : await manager.preview(true);
+    const record = JSON.stringify(
+      schema === 1
+        ? {
+            schema,
+            target,
+            binding: FOCUS_INPUT_BINDING,
+            beforeHash: sha256(source),
+            afterHash: sha256(installed),
+          }
+        : { schema, target, owner: FOCUS_INPUT_BINDING.command, command: FOCUS_INPUT_BINDING.command },
+    );
+    await fs.mkdir(data);
+    await fs.writeFile(path.join(data, "state.json"), record);
+    await fs.writeFile(target, installed);
+    await assert.rejects(manager.legacyBaseline(), (error: Error) => {
+      assert.match(error.message, /缺少旧版快捷键原文备份/);
+      assert.ok(error.message.includes(path.join(data, "before.jsonc")));
+      assert.match(error.message, /不要新建空文件/);
+      assert.equal((error.cause as NodeJS.ErrnoException).code, "ENOENT");
+      return true;
+    });
+    assert.equal(await fs.readFile(target, "utf8"), installed);
+    assert.equal(await fs.readFile(path.join(data, "state.json"), "utf8"), record);
+    await assert.rejects(fs.stat(path.join(data, "before.jsonc")), { code: "ENOENT" });
+    // A recovered original backup must still pass the existing reconstruction checks.
+    await fs.writeFile(path.join(data, "before.jsonc"), source);
+    assert.equal((await manager.legacyBaseline()).before, sha256(source));
+    assert.equal(await fs.readFile(target, "utf8"), installed);
+  }
+});
+
 test("explicit command migration upgrades only the owned focus rule and keeps user edits", async (t) => {
   for (const snapshot of [false, true]) {
     const root = await fs.mkdtemp(path.join(tmpdir(), "app-hook-focus-migration-"));

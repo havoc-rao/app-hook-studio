@@ -100,6 +100,19 @@ export class IdeKeybindingInstaller {
     }
   }
 
+  private async readBackup(): Promise<Buffer> {
+    try {
+      return await fs.readFile(this.backup);
+    } catch (error) {
+      if (isMissing(error))
+        throw new Error(
+          `缺少旧版快捷键原文备份：${this.backup}。无法证明安装前的完整原状，已拒绝恢复。请从原用户数据目录或系统备份找回原始备份；不要新建空文件、用当前快捷键文件冒充备份或删除安装记录。保留现有文件与备份后重试 Restore。`,
+          { cause: error },
+        );
+      throw error;
+    }
+  }
+
   private async state(): Promise<State | undefined> {
     let v: unknown;
     try {
@@ -116,7 +129,7 @@ export class IdeKeybindingInstaller {
         typeof legacy.binding?.key !== "string" ||
         !/^[a-f0-9]{64}$/.test(legacy.beforeHash) ||
         !/^[a-f0-9]{64}$/.test(legacy.afterHash) ||
-        sha256(await fs.readFile(this.backup)) !== legacy.beforeHash
+        sha256(await this.readBackup()) !== legacy.beforeHash
       )
         throw new Error("旧快捷键安装记录或备份不匹配。");
       return { schema: 2, target: this.target, owner: this.owner, command: this.binding.command, legacy };
@@ -191,7 +204,7 @@ export class IdeKeybindingInstaller {
         before: exists ? sha256(source) : null,
         after: exists ? sha256(source) : null,
       };
-    const original = await fs.readFile(this.backup, "utf8");
+    const original = (await this.readBackup()).toString("utf8");
     const before = sha256(original),
       after = exists ? sha256(source) : null;
     if (
@@ -318,7 +331,7 @@ export class IdeKeybindingInstaller {
     const found = this.locate(source, state);
     if (found.index < 0) return preview ? source : "没有本工具拥有的规则，不修改用户配置。";
     if (found.legacy) {
-      const original = await fs.readFile(this.backup, "utf8");
+      const original = (await this.readBackup()).toString("utf8");
       if (!state?.legacy || sha256(original) !== state.legacy.beforeHash) throw new Error("旧备份不匹配。");
       if (preview) return original;
       await this.commit(source, original);
